@@ -34,6 +34,7 @@ typedef enum {
 	TAG_HTML,
 	TAG_SOURCE,
 	TAG_COL,
+	TAG_HR,
 
 	TAG_COUNT,
 	TAG_OTHER
@@ -53,7 +54,8 @@ const char *tag_names[TAG_COUNT] = {
 	[TAG_HEAD] 		= "head",
 	[TAG_HTML] 		= "html",
 	[TAG_SOURCE]	= "source",
-	[TAG_COL] 		= "col"
+	[TAG_COL] 		= "col",
+	[TAG_HR]		= "hr"
 };
 
 //representation of an html element

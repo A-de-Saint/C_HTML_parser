@@ -22,4 +22,7 @@ int parse_html(const char *raw_html, html_tree_t *dst);
 //frees html tree
 void html_tree_free(html_tree_t *tree);
 
+//returns true, if the element is void (<br>, <img>...)
+bool is_void_element(html_element_t *elem);
+
 #endif
