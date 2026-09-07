@@ -1,6 +1,7 @@
 #include <stdlib.h>
 #include "html_parser.h"
 #include "html_parser_internal.h"
+#include "elements_internal.h"
 
 //initial size of class list array
 #define CLASS_LIST_INIT_SIZE 128
@@ -45,6 +46,7 @@ void class_list_free(class_list_t *list)
 }
 
 //html tree initialization
+//allocs class list and creates a document element (fist element, parent to all)
 //returns NULL upon failure
 html_tree_t *html_tree_init(void)
 {	
@@ -60,6 +62,13 @@ html_tree_t *html_tree_init(void)
 		return NULL;
 	}
 
-	tree->first_element = NULL;
+	html_element_t *doc_elem = element_init(NODE_ELEMENT, NULL);
+	if (!doc_elem)
+	{
+		class_list_free(&tree->classes);
+		free(tree);
+		return NULL;
+	}
+	tree->first_element = doc_elem;
 	return tree;
 }

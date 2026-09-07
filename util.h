@@ -31,6 +31,18 @@ int string_chararr_strcmp(string_t *str, char *strc);
 //compares string_t and string_t
 int string_string_strcmp(string_t *str1, string_t *str2);
 
+//puts a single char into str
+static inline bool string_putchar(string_t *str, char ch)
+{
+	if (str->length >= str->capacity)
+	{
+		if (!string_resize(str))
+			return false;
+	}
+	str->data[str->length++] = ch;
+	return true;
+}
+
 //.data->free()->NULL; length,capacity->0
 static inline void string_free(string_t *str)
 {
