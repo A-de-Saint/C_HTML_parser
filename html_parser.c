@@ -18,6 +18,18 @@ typedef enum {
 	BOGUS_COMMENT
 } states_t;
 
+//tries to find element in tagged elements and return its tag
+//if not found, returns TAG_OTHER
+tag_t find_element_tag(char *elem_name)
+{
+	for (unsigned i = 0; i < TAG_COUNT; i++)
+	{
+		if (strcmp(elem_name, tag_names[i]) == 0)
+			return (tag_t)i;
+	}
+	return TAG_OTHER;
+}
+
 bool is_void_element(html_element_t *elem)
 {
 	//just in case
@@ -137,6 +149,51 @@ void link_element(html_element_t *elem, html_element_t *parent)
 	curr_child->next_sibling = elem;
 }
 
+//assigns element name or element tag
+//resets elem_name string
+//if not void, adds element to stack
+//if false, alloc_error (cleans own mess)
+bool finalize_element_name(html_element_t *curr_elem, string_t *elem_name, element_stack_t *stack)
+{
+	//end string
+	if (!string_putchar(elem_name, '\0'))
+	{
+		return false;
+	}
+
+	//try to find element's tag
+	curr_elem->properties.tag = find_element_tag(elem_name->data);
+	if (curr_elem->properties.tag == TAG_OTHER)
+	{
+		//allocate new string						//no need for +1, because '\0' is a part of the string
+		curr_elem->properties.element_name = malloc(elem_name->length * sizeof(char));
+		if (!curr_elem->properties.element_name)
+		{
+			return false;
+		}
+
+		//copy the name
+		strncpy(curr_elem->properties.element_name, elem_name->data, elem_name->length);
+	}
+	else
+		curr_elem->properties.element_name = NULL;
+
+	//reset element name string
+	elem_name->length = 0;		//no need to allocate new string, since the old one was copied
+
+	//link element (add to tree)
+	link_element(curr_elem, element_stack_peek(stack));
+
+	//only add to stack if not a void element (<br>, <img>...)
+	if (!is_void_element(curr_elem))
+	{
+		if (!element_stack_push(stack, curr_elem))
+		{
+			return false;
+		}
+	}
+}
+
 /* FSM */
 
 //1 - NULL input
@@ -248,7 +305,7 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 
 					state = TEXT;
 				}
-				/* CASE "<c" */
+				/* CASE "<c" - reading element name */
 				else
 				{	
 					//link TEXT element
@@ -304,7 +361,7 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 				/* CASE "<!c" */
 				else
 				{
-					state = DOCTYPE; //TODO
+					state = DOCTYPE;
 				}
 
 				break;
@@ -361,14 +418,120 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 				break;
 
 			/* CASE DOCTYPE */
-			//doctype-like tokes also get discarded
+			//doctype-like tokens also get discarded
 			case DOCTYPE:
 				if (*raw_html == '>')
 					state = TEXT;
 				break;
 
-			//TODO
-		}
+			/* CASE COMMENT */
+			case COMMENT:
+				/* CASE '-' */
+				if (*raw_html == '-')
+				{
+					state = END_DASH_READ;
+				}
+				/* case anything else - continue comment */
+				else
+				{
+					if (!element_putchar(curr_elem, *raw_html))
+					{
+						goto alloc_err;
+					}
+				}
+				break;
+
+			/* CASE "comment-" */
+			case END_DASH_READ:
+				/* CASE "--" */
+				if (*raw_html == '-')
+				{
+					state = END_TWODASH_READ;
+				}
+				/* case anything else - return to comment */
+				else 
+				{
+					if (!element_putchar(curr_elem, '-')	||
+						!element_putchar(curr_elem, *raw_html))
+					{
+						goto alloc_err;
+					}
+					state = COMMENT;	//go back to comment state
+				}
+
+				break;
+
+			/* CASE "comment--" */
+			case END_TWODASH_READ:
+				/* CASE "-->" - end of comment */
+				if (*raw_html == '>')
+				{
+					//link comment, reset curr_elem
+					link_element(curr_elem, element_stack_peek(&stack));
+					curr_elem = NULL;
+					state = TEXT;		//switch back to TEXT
+				}
+				/* CASE "---" -> just continue twodash (still two dashes at the end) */
+				else if (*raw_html == '-')
+				{
+					//one '-' needs to be added, since only the two "--" at the end count
+					if (!element_putchar(curr_elem, '-'))
+					{
+						goto alloc_err;
+					}
+				}
+				/* case anything else - go back to reading comment */
+				else 
+				{
+					if (!element_putchar(curr_elem, '-') ||
+						!element_putchar(curr_elem, '-'))
+					{
+						goto alloc_err;
+					}
+					state = COMMENT;
+				}
+				break;
+
+			/* CASE ELEMENT_READ - reading element name */
+			case ELEM_NAME:
+				/* CASE END OF ELEMENT ('>') */
+				if (*raw_html == '>')
+				{
+					if (!finalize_element_name(curr_elem, &elem_name, &stack))
+						goto alloc_err;
+					
+					//reset curr_element (nothing to add to this one)
+					curr_elem = NULL;
+					
+					//reset to default TEXT state	
+					state = TEXT;
+				}
+				/* CASE err (improperly closed tag) */
+				else if (*raw_html == '<')
+				{
+					//TODO error recovery
+				}
+				/* CASE WHITESPACE - move to attribute reading */
+				else if (isspace(*raw_html))
+				{
+					if (!finalize_element_name(curr_elem, &elem_name, &stack))
+						goto alloc_err;
+
+					//leave curr_elem still on the table
+					state = ELEM_PROPERTIES;
+				}
+				/* CASE reading element name */
+				else
+				{
+					//add char (convert to lowercase)
+					if (!string_putchar(&elem_name, convert_to_lowercase(*raw_html)))
+						goto alloc_err;
+				}
+				break;
+
+			//TODO rest of element work, error recovery
+
+		}		
 
 		//end of loop
 		raw_html++;

@@ -60,4 +60,11 @@ static inline bool string_string_are_different(string_t *str1, string_t *str2)
 	return str1->length == str2->length;
 }
 
+static inline char convert_to_lowercase(char ch)
+{
+	if (ch >= 'A' && ch <= 'Z')
+		ch += 'A' - 'a';
+	return ch;
+}
+
 #endif
