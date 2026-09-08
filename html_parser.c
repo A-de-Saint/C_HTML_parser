@@ -220,7 +220,8 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 	//the element that is currently being worked on
 	html_element_t *curr_elem = NULL;
 	
-	
+	//string for storing element name that is currently being read
+	//does not get freed until the end of the FSM
 	string_t elem_name;
 	if (!string_init(&elem_name, 32))
 	{
@@ -228,9 +229,17 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 		return 2;
 	}
 
+	//line counter
+	//will be useful for error reports
+	size_t line_count = 1;
+
 	//finally, the FSM
 	while (*raw_html != '\0')
 	{
+		//keep track of which line it is
+		if (*raw_html == '\n')
+			line_count++;
+
 		switch (state)
 		{
 			/* TEXT */
@@ -529,7 +538,23 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 				}
 				break;
 
-			//TODO rest of element work, error recovery
+			/* CASE END OF ELEMENT ("</") */
+			case ELEM_END:
+				/* CASE end of ELEM_END */
+				if (*raw_html == '>')
+				{
+					if (elem_name.length == 0)
+					{
+						//TODO some error recovery for "</>"
+						break;
+					}
+
+					html_element_t *pop_elem = NULL;
+					while ((pop_elem = element_stack_pop(&stack)) != NULL)
+					{
+						if (//TODO)
+					}
+				}
 
 		}		
 
