@@ -18,6 +18,20 @@ typedef enum {
 	BOGUS_COMMENT
 } states_t;
 
+typedef enum {
+	DEFAULT,
+	READING_NAME,
+	READING_ATTR
+} elem_attr_states_t;
+
+const char unquoted_invalid_attr_chars[] = {
+	'"',
+	'\'',
+	'`',
+	'=',
+	'<'
+};
+
 //tries to find element in tagged elements and return its tag
 //if not found, returns TAG_OTHER
 tag_t find_element_tag(char *elem_name)
@@ -228,6 +242,9 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 		element_stack_free(&stack);
 		return 2;
 	}
+
+	//boolean that notifies that whitespace has been read
+	bool trailing_whitespace = false;
 
 	//line counter
 	//will be useful for error reports
@@ -543,6 +560,8 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 				/* CASE end of ELEM_END */
 				if (*raw_html == '>')
 				{
+					trailing_whitespace = false;
+
 					if (elem_name.length == 0)
 					{
 						//TODO some error recovery for "</>"
@@ -552,10 +571,92 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 					html_element_t *pop_elem = NULL;
 					while ((pop_elem = element_stack_pop(&stack)) != NULL)
 					{
-						if (//TODO)
+						if (string_charrar_strcmp(&elem_name, pop_elem->properties.element_name) != 0)
+						{
+							//TODO some error recovery for popping element that does not match the element name
+							continue;
+						}
+					}
+
+					//if pop_elem was not found, invalid element end
+					if (!pop_elem)
+					{
+						//TODO some error report
+						//I also have to do some error recovery, since the stack is now empty
+						//since the stack does not erase the data, maybe just backup the stack size and reset it
+						//such as stack_size_backup = stack.size -> if err, stack.size = stack_size_backup
+						break;
 					}
 				}
+				/* CASE reading whitespace */
+				else if (isspace(*raw_html))
+				{
+					//ignore whitespace but notify
+					trailing_whitespace = true;
+				}
+				/* CASE invalid char ('<') */
+				else if (*raw_html == '<')
+				{
+					//TODO some error recovery
+				}
+				/* CASE reading char */
+				else
+				{
+					if (trailing_whitespace)
+					{
+						//TODO some error recovery for stuff like </div smth
+					}
+					if (!string_putchar(&elem_name, *raw_html))
+					{
+						goto alloc_err;
+					}
+				}
+				break;
 
+			/* CASE ELEM_PROPERTIES */
+			//this one is basically it's own space (moving raw_html forth without breaking)
+			case ELEM_PROPERTIES:
+				//TODO maybe just alloc the buffers once, not everytime attributes are read
+				string_t attr_name;
+				string_t attr_val;
+
+				//alloc strings
+				if (!string_init(&attr_name, 16) ||
+					!string_init(&attr_val, 32))
+				{
+					//TODO
+					goto alloc_err;
+				}
+
+				//inner loop
+				while (*raw_html != '\0')
+				{
+					//
+					//TODO turn into inner FSM
+					//
+					if (*raw_html == '>')
+					{
+						//check current state
+						if (attr_name.length > 0)
+						{
+							if (attr_val.length > 0)
+							{
+								//TODO
+								//check for quotes (will be done implicitly probably)
+								//assign stuff
+							}
+							//TODO error report (attribute name but no value)
+						}
+						
+						string_free(&attr_name);
+						string_free(&attr_val);
+
+						break;
+					}
+
+
+				}
+				
 		}		
 
 		//end of loop
