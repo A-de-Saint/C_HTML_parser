@@ -62,3 +62,20 @@ int string_string_strcmp(string_t *str1, string_t *str2)
 			return diff_tmp;
 	}
 }
+
+bool string_append_string(string_t *dst, string_t *src)
+{
+	size_t req_cap = dst->length + src->length;
+	if (dst->capacity <= req_cap)
+	{
+		char *tmp = realloc(dst->data, (req_cap * 2) * sizeof(char));
+		if (!tmp)
+			return false;
+		dst->capacity = req_cap * 2;
+	}
+	for (size_t i = 0; i < src->length; i++)
+	{
+		dst->data[dst->length++] = src->data[i];
+	}
+	return true;
+}

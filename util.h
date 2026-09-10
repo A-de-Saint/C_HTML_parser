@@ -31,6 +31,9 @@ int string_chararr_strcmp(string_t *str, char *strc);
 //compares string_t and string_t
 int string_string_strcmp(string_t *str1, string_t *str2);
 
+//basically strcat for string_t's
+bool string_append_string(string_t *dst, string_t *src);
+
 //puts a single char into str
 static inline bool string_putchar(string_t *str, char ch)
 {

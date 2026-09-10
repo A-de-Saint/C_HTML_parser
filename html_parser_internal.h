@@ -71,9 +71,9 @@ struct html_element {
 			tag_t tag;					//enum number representing usual element types
 			char *element_name;			//name for unusual element types - NULL if tag is not 'TAG_OTHER'
 			char *id;					//id of the element
-			unsigned class_count;		//number of classes
-			unsigned class_capacity;	//capacity of class array
-			unsigned *class_ids;		//ids of all classes this element is a member of
+			size_t class_count;			//number of classes
+			size_t class_capacity;		//capacity of class array
+			size_t *class_ids;			//ids of all classes this element is a member of
 			char *other_attributes;		//other attributes in a single string
 		} properties;
 

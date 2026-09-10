@@ -1,6 +1,7 @@
 #include "html_parser.h"
 #include "html_parser_internal.h"
 #include "elements_internal.h"
+#include "classes_internal.h"
 #include <ctype.h>
 
 typedef enum {
@@ -18,11 +19,111 @@ typedef enum {
 	BOGUS_COMMENT
 } states_t;
 
+//states for reading attributes
 typedef enum {
-	DEFAULT,
-	READING_NAME,
-	READING_ATTR
+	DEFAULT,		//default (whitespace or in-between)
+	READING_NAME,	//reading attribute name
+	EXP_EQ,			//expect '='
+	QUOTES_OR_NOT,	//before reading attribute value; determine if quotes or not
+	READING_ATTR_Q,	//reading quoted attribute
+	READING_ATTR_NQ	//reading unquoted attribute
 } elem_attr_states_t;
+
+//states for special cases when reading attributes
+typedef enum {
+	NONE,			//no special case (for the purposes of this parser)
+	ID,				//reading id
+	CLASS			//reading class(es)
+} elem_spec_cases_t;
+
+const char *special_case_strs[2] = {"id", "class"};
+
+static inline elem_spec_cases_t determine_special_case(string_t *attr_name)
+{
+	if (string_chararr_strcmp(attr_name, special_case_strs[0]) == 0)
+		return ID;
+	if (string_chararr_strcmp(attr_name, special_case_strs[1]) == 0)
+		return CLASS;
+	return NONE;
+}
+
+//writes id to element
+bool write_id_to_element(html_element_t *elem, string_t *id_name)
+{
+	elem->properties.id = malloc((id_name->length + 1) * sizeof(char));
+	if (!elem->properties.id)
+		return false;
+	strncpy(elem->properties.id, id_name->data, id_name->length);
+	elem->properties.id[id_name->length] = '\0';
+	return true;
+}
+
+//adds class to classlist and writes its id to element
+bool write_class_to_element(html_element_t *elem, string_t *class_name, html_tree_t *tree)
+{
+	//find class id
+	size_t i = 0;
+	for ( ; i < tree->classes.size; i++)
+	{
+		if (string_chararr_strcmp(class_name, tree->classes.data[i]) == 0)
+			goto found;
+	}
+
+	//if here, class not found
+	//copy classname and add to classlist
+	char *classlist_entry = malloc((class_name->length + 1) * sizeof(char));
+	if (!classlist_entry)
+		return false;
+	if (!class_list_add(&tree->classes, classlist_entry))
+	{
+		free(classlist_entry);
+		return false;
+	}
+
+  found:
+	//if found, add index to element
+	if (elem->properties.class_count >= elem->properties.class_capacity)
+	{
+		//need to realloc
+		size_t *tmp = realloc(elem->properties.class_ids, elem->properties.class_capacity * 2);
+		if (!tmp)
+			return false;
+		elem->properties.class_capacity *= 2;
+	}
+	elem->properties.class_ids[elem->properties.class_count++] = i;
+	return true;
+}
+
+//adds attr_name and attr_val to other_attr in this format:
+//other_attr += attr_name="attr_val"
+bool add_to_other_attr(string_t *other_attr, string_t *attr_name, string_t *attr_val)
+{
+	//make space from previous attributes
+	if (other_attr->length > 0)
+	{
+		if (!string_putchar(other_attr, ' '))
+			return false;
+	}
+
+	//add attribute name
+	if (!string_append_string(other_attr, attr_name))
+		return false;
+
+	//if no value (bool attribute), all is okay
+	if (!attr_val || attr_val->length == 0)
+		return true;
+	
+	//add `="attr_val"`
+	if (!string_putchar(other_attr, '=')			||
+		!string_putchar(other_attr, '"')			||
+		!string_append_string(other_attr, attr_val)	||
+		!string_putchar(other_attr, '"'))
+	{
+		return false;
+	}
+
+	return true;
+}
 
 const char unquoted_invalid_attr_chars[] = {
 	'"',
@@ -619,21 +720,27 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 				//TODO maybe just alloc the buffers once, not everytime attributes are read
 				string_t attr_name;
 				string_t attr_val;
+				string_t other_attr;
 
 				//alloc strings
 				if (!string_init(&attr_name, 16) ||
-					!string_init(&attr_val, 32))
+					!string_init(&attr_val, 32)  ||
+					!string_init(&other_attr, 128));
 				{
 					//TODO
 					goto alloc_err;
 				}
+				
+				//enum instances (states)
+				elem_attr_states_t attr_state = DEFAULT;
+				elem_spec_cases_t spec_case = NONE;
+
+				char curr_quote = '\0';
 
 				//inner loop
 				while (*raw_html != '\0')
-				{
-					//
-					//TODO turn into inner FSM
-					//
+				{	
+					//check if element is ending
 					if (*raw_html == '>')
 					{
 						//check current state
@@ -641,15 +748,45 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 						{
 							if (attr_val.length > 0)
 							{
+								if (attr_state == READING_ATTR_Q)
+								{
+									//TODO report error - unproperly ended quotes
+								}
 								//TODO
-								//check for quotes (will be done implicitly probably)
-								//assign stuff
+								else if (spec_case == ID)
+								{
+									if (!write_id_to_element(curr_elem, &attr_val))
+										goto alloc_err;
+								}
+								else if (spec_case == CLASS)
+								{
+									if (!write_class_to_element(curr_elem, &attr_val, dst))
+										goto alloc_err;
+								}
+								else
+								{
+									if (!add_to_other_attr(&other_attr, &attr_name, &attr_val))
+										goto alloc_err;
+								}
 							}
-							//TODO error report (attribute name but no value)
+							else
+							{
+								spec_case = determine_special_case(&attr_name);
+								if (spec_case != NONE)
+								{
+									//TODO report error - valueless id or class attribute
+								}
+								//add other attribute (valueless)
+								else if (!add_to_other_attr(&other_attr, &attr_name, NULL))
+									goto alloc_err;
+							}
 						}
+
+						//TODO add other attributes (if existing) to element
 						
 						string_free(&attr_name);
 						string_free(&attr_val);
+						string_free(&other_attr);
 
 						break;
 					}
