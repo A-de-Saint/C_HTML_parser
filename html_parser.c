@@ -741,7 +741,7 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 				while (*raw_html != '\0')
 				{	
 					//check if element is ending
-					if (*raw_html == '>')
+					if (*raw_html == '>' && attr_state != READING_ATTR_Q)
 					{
 						//check current state
 						if (attr_name.length > 0)
@@ -782,7 +782,18 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 							}
 						}
 
-						//TODO add other attributes (if existing) to element
+						//finalize other attributes (if existing)
+						if (other_attr.length > 0)
+						{
+							curr_elem->properties.other_attributes = malloc((other_attr.length + 1) * sizeof(char));
+							if (!curr_elem->properties.other_attributes)
+							{	
+								//TODO
+								goto alloc_err;	
+							}
+							strncpy(curr_elem->properties.other_attributes, other_attr.data, other_attr.length);
+							curr_elem->properties.other_attributes[other_attr.length] = '\0';
+						}
 						
 						string_free(&attr_name);
 						string_free(&attr_val);
@@ -791,7 +802,252 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 						break;
 					}
 
+					
+					if (*raw_html == '<' & attr_state != READING_ATTR_Q)
+					{
+						//TODO report unproper element end (case "<div<span>")
+						break;
+					}
 
+					/* INNER FSM SWITCH */
+					switch(attr_state)
+					{
+						/* CASE default */
+						case DEFAULT:
+							//reset attr_name and attr_val
+							attr_name.length = 0;
+							attr_val.length = 0;
+
+							/* CASE whitespace - ignore */
+							if (isspace(*raw_html))
+							{
+								break;
+							}
+							//4 chars from the invalid_chars array
+							for (unsigned i = 0; i < 4; i++)
+							{
+								if (*raw_html == unquoted_invalid_attr_chars[i])
+								{
+									//TODO report invalid character
+									goto after_switch;	//since break would only break the for loop and continue
+								}
+							}
+							//else
+							if (!string_putchar(&attr_name, *raw_html))
+							{
+								//TODO
+								goto alloc_err;
+							}
+							attr_state = READING_NAME;
+							break;
+
+						/* CASE reading_name */
+						case READING_NAME:
+							/* CASE invalid */
+							//only 3, because '=' is valid
+							for (unsigned i = 0; i < 3; i++)
+							{
+								if (*raw_html == unquoted_invalid_attr_chars[i])
+								{
+									//TODO report invalid char
+									goto after_switch;
+								}
+							}
+							/* CASE whitespace - continue to expect '=' or new attribute */
+							if (isspace(*raw_html))
+							{
+								//try to get special case (ID or CLASS)
+								spec_case = determine_special_case(&attr_name);
+								attr_state = EXP_EQ;
+							}
+							/* CASE '=' - skip EXP_EQ state */
+							else if (*raw_html == '=')
+							{
+								//try to get special case
+								spec_case = determine_special_case(&attr_name);
+								attr_state = QUOTES_OR_NOT;
+							}
+							/* CASE anything else - write to name */
+							else
+							{
+								if (!string_putchar(&attr_name, convert_to_lowercase(*raw_html)))
+								{
+									//TODO
+									goto alloc_err;
+								}
+							}
+							break;
+
+						/* CASE EXP_EQ */
+						case EXP_EQ:
+							//check for invalids (only 3, because '=' is not invalid in this case)
+							for (unsigned i = 0; i < 3; i++)
+							{
+								if (*raw_html == unquoted_invalid_attr_chars[i])
+								{
+									//TODO report invalid
+									goto after_switch;
+								}
+							}
+							/* CASE '=' - what is expected */
+							if (*raw_html == '=')
+							{
+								attr_state = QUOTES_OR_NOT;
+							}
+							//ignore whitespace
+							if (isspace(*raw_html))
+							{
+								break;
+							}
+							/* CASE anything else - got no '=', it must be a boolean attribute */
+							else
+							{
+								//check if not id or class attributes, if so, then error
+								if (spec_case != NONE)
+								{
+									//TODO report error - valueless id or class
+								}
+								//otherwise just valueless element - add to other_attr
+								else 
+								{
+									if (!add_to_other_attr(&other_attr, &attr_name, NULL))
+									{
+										//TODO
+										goto alloc_err;
+									}
+								}
+								
+								//reset attr_name buffer
+								attr_name.length = 0;
+
+								//no need to check return bool since there will always be at least 1 allocated char
+								string_putchar(&attr_name, *raw_html);
+								attr_state = READING_NAME;
+							}
+							break;
+
+						/* CASE QUOTES_OR_NOT - determine if value is quoted or not */
+						case QUOTES_OR_NOT:
+							/* CASE QUOTES */
+							if (*raw_html == '"' || *raw_html == '\'')
+							{
+								//save what the quotes started with
+								curr_quote = *raw_html;
+								attr_state = READING_ATTR_Q;
+							}
+							//ignore whitespace
+							else if (isspace(*raw_html))
+							{
+								break;
+							}
+							//check for invalids
+							else if (*raw_html == '`' || *raw_html == '=')
+							{
+								//TODO report invalid char
+							}
+							/* CASE anything else - unquoted */
+							else
+							{
+								attr_val.length = 0;	//just to be sure
+
+								//no need to check return val, always should be true
+								string_putchar(&attr_val, *raw_html);
+								state = READING_ATTR_NQ;
+							}
+							break;
+
+						/* CASE READING QUOTED VALUE */
+						case READING_ATTR_Q:
+							/* CASE end of read */
+							if (*raw_html == curr_quote)
+							{
+								attr_state = DEFAULT;
+								goto finalize_attr;
+							}
+							/* CASE class and whitespace - multiple classes, write a single one */
+							else if (spec_case == CLASS && attr_val.length > 0 && isspace(*raw_html))
+							{
+								//write and reset attr_val
+								//TODO make sure that this doesn't get flagged as valueless element
+								if (!write_class_to_element(curr_elem, &attr_val, dst))
+								{
+									//TODO
+									goto alloc_err;
+								}
+								attr_val.length = 0;
+							}
+							/* CASE anything else - write to attribute value */
+							else
+							{
+								if (!string_putchar(&attr_val, *raw_html))
+								{
+									//TODO
+									goto alloc_err;
+								}
+							}
+							break;
+						
+						/* CASE READING UNQUOTED ATTRIBUTE */
+						case READING_ATTR_NQ:
+							/* CASE whitespace - end */
+							if (isspace(*raw_html))
+							{
+								attr_state = DEFAULT;
+								goto finalize_attr;
+							}
+							//check for invalids
+							for (unsigned i = 0; i < 4; i++)
+							{
+								if (*raw_html == unquoted_invalid_attr_chars[i])
+								{
+									//TODO report error - invalid char
+								}
+							}
+							/* CASE anything else - write to string */
+							else
+							{
+								if (!string_putchar(&attr_val, *raw_html))
+								{
+									//TODO
+									goto alloc_err;
+								}
+							}
+							break;
+
+						//label for finalizing a single attribute
+					  finalize_attr:
+					  	if (attr_val.length == 0)
+							goto after_switch;
+					  	if (spec_case == ID)
+						{
+							if (!write_id_to_element(curr_elem, &attr_val))
+							{
+								//TODO
+								goto alloc_err;
+							}
+						}
+						else if (spec_case == CLASS)
+						{
+							if (!write_class_to_element(curr_elem, &attr_val, dst))
+							{
+								//TODO
+								goto alloc_err;
+							}
+						}
+						else
+						{
+							if (!add_to_other_attr(&other_attr, &attr_name, &attr_val))
+							{
+								goto alloc_err;
+							}
+						}
+						  	
+
+						
+					}
+				  after_switch:
+
+					raw_html++;
 				}
 				
 		}		
