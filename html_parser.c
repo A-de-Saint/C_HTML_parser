@@ -1001,16 +1001,14 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 								if (*raw_html == unquoted_invalid_attr_chars[i])
 								{
 									//TODO report error - invalid char
+									break;
 								}
 							}
 							/* CASE anything else - write to string */
-							else
+							if (!string_putchar(&attr_val, *raw_html))
 							{
-								if (!string_putchar(&attr_val, *raw_html))
-								{
-									//TODO
-									goto alloc_err;
-								}
+								//TODO
+								goto alloc_err;
 							}
 							break;
 
