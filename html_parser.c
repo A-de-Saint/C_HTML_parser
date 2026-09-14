@@ -725,11 +725,22 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 					}
 
 					html_element_t *pop_elem = NULL;
+					size_t stack_size_backup = stack.size;
 					while ((pop_elem = element_stack_pop(&stack)) != NULL)
 					{
-						if (string_charrar_strcmp(&elem_name, pop_elem->properties.element_name) != 0)
+						char *pop_elem_name = pop_elem->properties.element_name;
+						//case element name not explicitly said, need to get it
+						if (!pop_elem_name)
 						{
-							//TODO some error recovery for popping element that does not match the element name
+							pop_elem_name = tag_names[pop_elem->properties.tag];
+						}
+
+						if (string_charrar_strcmp(&elem_name, pop_elem_name) != 0)
+						{
+							fprintf(stderr, "html_parser: warning: expected end tag for element: %s, but instead got '</", pop_elem_name);
+							for (size_t i = 0; i < elem_name.length; i++)
+								fputc(elem_name.data[i], stderr);
+							fprintf(stderr, ">'. Line: %zu Col: %zu\n", line_count, col_count);
 							continue;
 						}
 					}
@@ -737,14 +748,21 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 					//if pop_elem was not found, invalid element end
 					if (!pop_elem)
 					{
-						//TODO some error report
-						//I also have to do some error recovery, since the stack is now empty
-						//since the stack does not erase the data, maybe just backup the stack size and reset it
-						//such as stack_size_backup = stack.size -> if err, stack.size = stack_size_backup
-						break;
+						fprintf(stderr, "html_parser: warning: element end tag wihout element start tag: ");
+						//fprintf elem_name
+						for (size_t i = 0; i < elem_name.length; i++)
+							fputc(elem_name.data[i], stderr);
+						fprintf(stderr, " Line: %zu Col: %zu\n", line_count, col_count);
+
+						//bring the stack back (invalid element case)
+						stack.size = stack_size_backup;
 					}
 
-					//TODO return to TEXT
+					//reset elem_name buffer and go to TEXT
+					elem_name.length = 0;
+					state = TEXT;
+					break;
+
 				}
 				/* CASE reading whitespace */
 				else if (isspace(*raw_html))
@@ -837,7 +855,6 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 							curr_elem->properties.other_attributes = malloc((other_attr.length + 1) * sizeof(char));
 							if (!curr_elem->properties.other_attributes)
 							{	
-								//TODO
 								goto alloc_err;	
 							}
 							strncpy(curr_elem->properties.other_attributes, other_attr.data, other_attr.length);
@@ -891,7 +908,6 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 							//else
 							if (!string_putchar(&attr_name, *raw_html))
 							{
-								//TODO
 								goto alloc_err;
 							}
 							attr_state = READING_NAME;
@@ -928,7 +944,6 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 							{
 								if (!string_putchar(&attr_name, convert_to_lowercase(*raw_html)))
 								{
-									//TODO
 									goto alloc_err;
 								}
 							}
@@ -968,7 +983,6 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 								{
 									if (!add_to_other_attr(&other_attr, &attr_name, NULL))
 									{
-										//TODO
 										goto alloc_err;
 									}
 								}
@@ -1077,7 +1091,6 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 						{
 							if (!write_id_to_element(curr_elem, &attr_val))
 							{
-								//TODO
 								goto alloc_err;
 							}
 						}
@@ -1085,7 +1098,6 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 						{
 							if (!write_class_to_element(curr_elem, &attr_val, dst))
 							{
-								//TODO
 								goto alloc_err;
 							}
 						}
