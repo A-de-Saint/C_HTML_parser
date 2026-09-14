@@ -3,6 +3,7 @@
 #include "elements_internal.h"
 #include "classes_internal.h"
 #include <ctype.h>
+#include <stdio.h>
 
 typedef enum {
 	TEXT,
@@ -334,15 +335,27 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 
 	//the element that is currently being worked on
 	html_element_t *curr_elem = NULL;
+	bool curr_elem_linked = false;
 	
 	//string for storing element name that is currently being read
 	//does not get freed until the end of the FSM
 	string_t elem_name;
 	if (!string_init(&elem_name, 32))
 	{
-		element_stack_free(&stack);
-		return 2;
+		goto f_s;
 	}
+
+	//buffers for reading attributes
+	string_t attr_name;
+	string_t attr_val;
+	string_t other_attr;
+
+	if (!string_init(&attr_name, 16))
+		goto f_ss;
+	if (!string_init(&attr_val, 32))
+		goto f_sss;
+	if (!string_init(&other_attr, 128))
+		goto f_ssss;
 
 	//boolean that notifies that whitespace has been read
 	bool trailing_whitespace = false;
@@ -350,13 +363,19 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 	//line counter
 	//will be useful for error reports
 	size_t line_count = 1;
+	size_t col_count = 0;
 
 	//finally, the FSM
 	while (*raw_html != '\0')
 	{
-		//keep track of which line it is
+		//keep track of which line and column it is
 		if (*raw_html == '\n')
+		{
 			line_count++;
+			col_count = 0;
+		}
+		else
+			col_count++;
 
 		switch (state)
 		{
@@ -366,14 +385,6 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 				if (*raw_html == '<')
 				{	
 					state = LT_READ;
-
-					//TODO remove (for error handling)
-					//check for TEXT read before
-					if (curr_elem)
-					{
-						link_element(curr_elem, element_stack_peek(&stack));	//if text was found, link
-						curr_elem = NULL;
-					}
 				}
 
 				/* case anyting else -> write character to a text element (create if necessary) */
@@ -384,8 +395,10 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 						curr_elem = element_init(NODE_TEXT, element_stack_peek(&stack));
 						if (!curr_elem)
 						{
+							//nothing new to free
 							goto alloc_err;
 						}
+						curr_elem_linked = false;
 					}
 					if (!element_putchar(curr_elem, *raw_html))
 					{
@@ -405,12 +418,21 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 				/* CASE "<?" */
 				else if (*raw_html == '?')
 				{	
-					//will be discarded
+					//link text element, if exists
+					if (curr_elem != NULL)
+					{
+						link_element(curr_elem, element_stack_peek(&stack));
+					}
 					state = BOGUS_COMMENT;
 				}
 				/* CASE "</" */
 				else if (*raw_html == "/")
 				{
+					//link element if exists
+					if (curr_elem != NULL)
+					{
+						link_element(curr_elem, element_stack_peek(&stack));
+					}
 					state = ELEM_END;
 				}
 				/* CASE "< " */
@@ -422,8 +444,10 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 						curr_elem = element_init(NODE_TEXT, element_stack_peek(&stack));
 						if (!curr_elem)
 						{
+							//nothing to free
 							goto alloc_err;
 						}
+						curr_elem_linked = false;
 					}
 					if (!element_putchar(curr_elem, '<') || !element_putchar(curr_elem, *raw_html))
 					{
@@ -445,13 +469,17 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 					curr_elem = element_init(NODE_ELEMENT, element_stack_peek(&stack));
 					if (!curr_elem)
 					{
+						//nothing to free here
 						goto alloc_err;
 					}
 
+					curr_elem_linked = false;
+
 					//start reading name into string dedicated to it
 					state = ELEM_NAME;
-					if (!string_putchar(&elem_name, *raw_html))
-						goto alloc_err;
+
+					//no need to check for return value, since if alloc was good, size cannot be greater than capacity
+					string_putchar(&elem_name, *raw_html);
 				}
 
 				break;
@@ -471,8 +499,10 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 						curr_elem = element_init(NODE_TEXT, element_stack_peek(&stack));
 						if (!curr_elem)
 						{
+							//nothing to free here
 							goto alloc_err;
 						}
+						curr_elem_linked = false;
 					}
 
 					//write "<! " into TEXT element
@@ -488,6 +518,11 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 				/* CASE "<!c" */
 				else
 				{
+					//link element if exists
+					if (curr_elem != NULL)
+					{
+						link_element(curr_elem, element_stack_peek(&stack));
+					}
 					state = DOCTYPE;
 				}
 
@@ -495,11 +530,11 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 
 			/* CASE "<!-" */
 			case START_DASH_READ:
-				/* CASE "<!--" */
+				/* CASE "<!--" - reading comment */
 				if (*raw_html == '-')
 				{
 					//link text element
-					if (curr_elem)
+					if (curr_elem != NULL)
 					{
 						link_element(curr_elem, element_stack_peek(&stack));
 					}
@@ -508,6 +543,8 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 					curr_elem = element_init(NODE_COMMENT, element_stack_peek(&stack));
 					if (!curr_elem)
 						goto alloc_err;
+
+					curr_elem_linked = false;
 
 					state = COMMENT;
 				}
@@ -519,6 +556,7 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 						curr_elem = element_init(NODE_TEXT, element_stack_peek(&stack));
 						if (!curr_elem)
 						{
+							//nothing to free
 							goto alloc_err;
 						}
 					}
@@ -536,6 +574,8 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 				}
 
 				break;
+
+			//TODO optional bogus and doctype can be put in a while loop in-place, should save performance
 
 			/* CASE BOGUS COMMENT */
 			//bogus comments are discarded for this design, as if they never existed
@@ -596,6 +636,7 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 					//link comment, reset curr_elem
 					link_element(curr_elem, element_stack_peek(&stack));
 					curr_elem = NULL;
+					curr_elem_linked = false;
 					state = TEXT;		//switch back to TEXT
 				}
 				/* CASE "---" -> just continue twodash (still two dashes at the end) */
@@ -625,10 +666,16 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 				if (*raw_html == '>')
 				{
 					if (!finalize_element_name(curr_elem, &elem_name, &stack))
+					{
 						goto alloc_err;
+					}
+
+					//link now that we know it's a valid element
+					link_element(curr_elem, element_stack_peek(&stack));
 					
 					//reset curr_element (nothing to add to this one)
 					curr_elem = NULL;
+					curr_elem_linked = false;
 					
 					//reset to default TEXT state	
 					state = TEXT;
@@ -642,7 +689,13 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 				else if (isspace(*raw_html))
 				{
 					if (!finalize_element_name(curr_elem, &elem_name, &stack))
+					{
 						goto alloc_err;
+					}
+
+					//link now
+					link_element(curr_elem, element_stack_peek(&stack));
+					curr_elem_linked = true;
 
 					//leave curr_elem still on the table
 					state = ELEM_PROPERTIES;
@@ -652,7 +705,9 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 				{
 					//add char (convert to lowercase)
 					if (!string_putchar(&elem_name, convert_to_lowercase(*raw_html)))
+					{
 						goto alloc_err;
+					}
 				}
 				break;
 
@@ -688,11 +743,13 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 						//such as stack_size_backup = stack.size -> if err, stack.size = stack_size_backup
 						break;
 					}
+
+					//TODO return to TEXT
 				}
 				/* CASE reading whitespace */
 				else if (isspace(*raw_html))
 				{
-					//ignore whitespace but notify
+					//ignore whitespace but notify the FSM
 					trailing_whitespace = true;
 				}
 				/* CASE invalid char ('<') */
@@ -717,19 +774,6 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 			/* CASE ELEM_PROPERTIES */
 			//this one is basically it's own space (moving raw_html forth without breaking)
 			case ELEM_PROPERTIES:
-				//TODO maybe just alloc the buffers once, not everytime attributes are read
-				string_t attr_name;
-				string_t attr_val;
-				string_t other_attr;
-
-				//alloc strings
-				if (!string_init(&attr_name, 16) ||
-					!string_init(&attr_val, 32)  ||
-					!string_init(&other_attr, 128));
-				{
-					//TODO
-					goto alloc_err;
-				}
 				
 				//enum instances (states)
 				elem_attr_states_t attr_state = DEFAULT;
@@ -740,6 +784,16 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 				//inner loop
 				while (*raw_html != '\0')
 				{	
+					//keep track of which line and column it is
+					//need to do this again inside inner loop
+					if (*raw_html == '\n')
+					{
+						line_count++;
+						col_count = 0;
+					}
+					else
+						col_count++;
+
 					//check if element is ending
 					if (*raw_html == '>' && attr_state != READING_ATTR_Q)
 					{
@@ -748,12 +802,7 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 						{
 							if (attr_val.length > 0)
 							{
-								if (attr_state == READING_ATTR_Q)
-								{
-									//TODO report error - unproperly ended quotes
-								}
-								//TODO
-								else if (spec_case == ID)
+								if (spec_case == ID)
 								{
 									if (!write_id_to_element(curr_elem, &attr_val))
 										goto alloc_err;
@@ -795,9 +844,16 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 							curr_elem->properties.other_attributes[other_attr.length] = '\0';
 						}
 						
-						string_free(&attr_name);
-						string_free(&attr_val);
-						string_free(&other_attr);
+						//reset strings
+						attr_name.length = 0;
+						attr_val.length = 0;
+						other_attr.length = 0;
+
+						//reset attr_state
+						attr_state = DEFAULT;
+
+						//return to TEXT
+						state = TEXT;
 
 						break;
 					}
@@ -961,6 +1017,7 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 							/* CASE end of read */
 							if (*raw_html == curr_quote)
 							{
+								//finalize attributes and return to default
 								attr_state = DEFAULT;
 								goto finalize_attr;
 							}
@@ -981,7 +1038,6 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 							{
 								if (!string_putchar(&attr_val, *raw_html))
 								{
-									//TODO
 									goto alloc_err;
 								}
 							}
@@ -992,6 +1048,7 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 							/* CASE whitespace - end */
 							if (isspace(*raw_html))
 							{
+								//finalize attributes and return to default
 								attr_state = DEFAULT;
 								goto finalize_attr;
 							}
@@ -1055,8 +1112,31 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 	}
 
   alloc_err:
-	//TODO
+	// malloc/realloc failed, free everything
+	
+	fprintf(stderr, "html_parser: parsing ended unsuccessfully at line %zu, column %zu\n", line_count, col_count);
 
+	//if work was being done on curr_elem, free it also
+	if (curr_elem != NULL && !curr_elem_linked)
+	{
+		//TODO free element
+	}
+
+  func_end:
+	//TODO free entire tree (all-or-nothing approach)
+  	
+  f_ssss:
+	string_free(&other_attr);
+  f_sss:
+	string_free(&attr_val);
+  f_ss:
+	string_free(&elem_name);
+  f_s:
+	element_stack_free(&stack);
+
+	fprintf(stderr, "html_parser: Allocation failed (out of memory).\n");
+
+	return 2;
 }
 
 
