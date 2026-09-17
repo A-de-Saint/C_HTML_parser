@@ -360,6 +360,9 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 	//boolean that notifies that whitespace has been read
 	bool trailing_whitespace = false;
 
+	//boolean that notifies that a self-closing slash has been read (the '/' from "/>")
+	bool self_closing_slash = false;
+
 	//line counter
 	//will be useful for error reports
 	size_t line_count = 1;
@@ -463,6 +466,15 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 					if (curr_elem)
 					{
 						link_element(curr_elem, element_stack_peek(&stack));	//if text was found, link
+					}
+
+					//an element name must start with an ASCII letter - if not, error and ignore whole token
+					if (!(*raw_html  >= 'a' && *raw_html <= 'z') || !(!raw_html <= 'A' && *raw_html >= 'Z'))
+					{
+						fprintf(stderr, "html_parser: Element token not starting with an ascii letter will be ignored (treated as a bogus comment). Line: %zu Col: %zu\n", line_count, col_count);
+						curr_elem = NULL;
+						curr_elem_linked = false;
+						state = BOGUS_COMMENT;
 					}
 
 					//create element node
@@ -665,6 +677,12 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 				/* CASE END OF ELEMENT ('>') */
 				if (*raw_html == '>')
 				{
+					if (self_closing_slash)
+					{
+						fprintf(stderr, "html_parser: warn: self-closing syntax ignored, treating as normal element declaration. Line: %zu Col: %zu\n", line_count, col_count);
+						self_closing_slash = false;
+					}
+
 					if (!finalize_element_name(curr_elem, &elem_name, &stack))
 					{
 						goto alloc_err;
@@ -679,6 +697,33 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 					
 					//reset to default TEXT state	
 					state = TEXT;
+				}
+				/* CASE unexpected '/' before */
+				else if (self_closing_slash)
+				{
+					fprintf(stderr, "html_parser: unexpected '/' in element name tag. Ignoring until '>'. Line: %zu Col: %zu\n", line_count, col_count);
+					
+					//still treat the part before '/' as an element
+					if (!finalize_element_name(curr_elem, &elem_name, &stack))
+					{
+						goto alloc_err;
+					}
+
+					//link now that we know it's a valid element
+					link_element(curr_elem, element_stack_peek(&stack));
+					
+					//reset curr_element (nothing to add to this one)
+					curr_elem = NULL;
+					curr_elem_linked = false;
+
+					self_closing_slash = false;	//reset
+					state = BOGUS_COMMENT;		//to ignore until '>'
+				}
+				/* CASE slash - potentially self-closing */
+				else if (*raw_html == '/')
+				{
+					self_closing_slash = true;
+					break;
 				}
 				/* CASE err (improperly closed tag) */
 				else if (*raw_html == '<')
@@ -815,6 +860,12 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 					//check if element is ending
 					if (*raw_html == '>' && attr_state != READING_ATTR_Q)
 					{
+						if (self_closing_slash)
+						{
+							fprintf(stderr, "html_parser: warn: self-closing syntax ignored, treating as normal element declaration. Line: %zu Col: %zu\n", line_count, col_count);
+							self_closing_slash = false;
+						}
+
 						//check current state
 						if (attr_name.length > 0)
 						{
@@ -841,10 +892,12 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 								spec_case = determine_special_case(&attr_name);
 								if (spec_case != NONE)
 								{
-									//TODO report error - valueless id or class attribute
+									fprintf(stderr, "html_parser: valueless %s attribute. Will be treated as a boolean attribute. Line: %zu Col: %zu\n",
+										spec_case == ID ? "id" : "class",
+										line_count, col_count);
 								}
 								//add other attribute (valueless)
-								else if (!add_to_other_attr(&other_attr, &attr_name, NULL))
+								if (!add_to_other_attr(&other_attr, &attr_name, NULL))
 									goto alloc_err;
 							}
 						}
@@ -882,6 +935,17 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 						break;
 					}
 
+					/* CASE '/' - expect slash end */
+					if (*raw_html == '/')
+					{
+						self_closing_slash = true;
+						goto after_switch;		//don't continue into the inner FSM, report (and add '/' afterward)
+					}
+					//
+					//TODO make proper '/' check - consider all states
+					//
+
+
 					/* INNER FSM SWITCH */
 					switch(attr_state)
 					{
@@ -896,6 +960,7 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 							{
 								break;
 							}
+
 							//4 chars from the invalid_chars array
 							for (unsigned i = 0; i < 4; i++)
 							{
@@ -1042,7 +1107,6 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 								//TODO make sure that this doesn't get flagged as valueless element
 								if (!write_class_to_element(curr_elem, &attr_val, dst))
 								{
-									//TODO
 									goto alloc_err;
 								}
 								attr_val.length = 0;
@@ -1078,7 +1142,6 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 							/* CASE anything else - write to string */
 							if (!string_putchar(&attr_val, *raw_html))
 							{
-								//TODO
 								goto alloc_err;
 							}
 							break;
