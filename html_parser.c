@@ -126,14 +126,6 @@ bool add_to_other_attr(string_t *other_attr, string_t *attr_name, string_t *attr
 	return true;
 }
 
-const char unquoted_invalid_attr_chars[] = {
-	'"',
-	'\'',
-	'`',
-	'=',
-	'<'
-};
-
 //tries to find element in tagged elements and return its tag
 //if not found, returns TAG_OTHER
 tag_t find_element_tag(char *elem_name)
@@ -936,14 +928,37 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 					}
 
 					/* CASE '/' - expect slash end */
-					if (*raw_html == '/')
+					if (*raw_html == '/' && attr_state != READING_ATTR_Q)
 					{
+						//determine next state based on current state
+						if (attr_state == DEFAULT)
+						{
+							//DEFAULT means that '/' is an error, but error-handling suggests adding it to attr_name (if not ending)
+							attr_state = READING_NAME;
+						}
+						else if (attr_state == EXP_EQ)
+						{
+							//EXP_EQ means that no '=' was found and '/' is as if a new element was starting
+							goto exp_eq_no_eq;
+						}
+						else if (attr_state == QUOTES_OR_NOT)
+						{
+							//QUOTES_OR_NOT means that no quotes have been found, so '/' is as if an attribute was starting
+							attr_state = READING_ATTR_NQ;
+						}
+						//other states stay the same
+
 						self_closing_slash = true;
 						goto after_switch;		//don't continue into the inner FSM, report (and add '/' afterward)
 					}
-					//
-					//TODO make proper '/' check - consider all states
-					//
+					/* CASE other invalid characters */
+					else if (*raw_html == '=' && attr_state != READING_ATTR_Q && attr_state != EXP_EQ)
+						fprintf(stderr, "html_parser: parse error: invalid character '='. Will still get parsed. Line: %zu Col: %zu\n", line_count, col_count);
+					else if ((*raw_html == '\'' || *raw_html == '"') && attr_state != READING_ATTR_Q && attr_state != QUOTES_OR_NOT)
+						fprintf(stderr, "html_parser: parse error: invalid character '%s'. Will still get parsed. Line: %zu Col: %zu\n", *raw_html,line_count, col_count);
+					else if (*raw_html == '`' && attr_state != READING_ATTR_Q)
+						fprintf(stderr, "html_parser: parse error: invalid character '`'. Will still get parsed. Line: %zu Col: %zu\n", line_count, col_count);
+
 
 
 					/* INNER FSM SWITCH */
@@ -961,35 +976,24 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 								break;
 							}
 
-							//4 chars from the invalid_chars array
-							for (unsigned i = 0; i < 4; i++)
-							{
-								if (*raw_html == unquoted_invalid_attr_chars[i])
-								{
-									//TODO report invalid character
-									goto after_switch;	//since break would only break the for loop and continue
-								}
-							}
 							//else
-							if (!string_putchar(&attr_name, *raw_html))
-							{
-								goto alloc_err;
-							}
+							//no need to check  return value, since the buffer is empty
+							string_putchar(&attr_name, *raw_html);
 							attr_state = READING_NAME;
 							break;
 
 						/* CASE reading_name */
 						case READING_NAME:
-							/* CASE invalid */
-							//only 3, because '=' is valid
-							for (unsigned i = 0; i < 3; i++)
+							/* CASE '/' has been read */
+							if (self_closing_slash)
 							{
-								if (*raw_html == unquoted_invalid_attr_chars[i])
-								{
-									//TODO report invalid char
-									goto after_switch;
-								}
+								fprintf(stderr, "html_parser: parse error: invalid character '/' - will be put into the element name. Line: %zu Col: %zu\n", line_count, col_count);
+								//add it to element name anyway (error handling spec)
+								if (!string_putchar(&attr_name, '/'))
+									goto alloc_err;
+								self_closing_slash = false;
 							}
+
 							/* CASE whitespace - continue to expect '=' or new attribute */
 							if (isspace(*raw_html))
 							{
@@ -1016,15 +1020,6 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 
 						/* CASE EXP_EQ */
 						case EXP_EQ:
-							//check for invalids (only 3, because '=' is not invalid in this case)
-							for (unsigned i = 0; i < 3; i++)
-							{
-								if (*raw_html == unquoted_invalid_attr_chars[i])
-								{
-									//TODO report invalid
-									goto after_switch;
-								}
-							}
 							/* CASE '=' - what is expected */
 							if (*raw_html == '=')
 							{
@@ -1038,6 +1033,7 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 							/* CASE anything else - got no '=', it must be a boolean attribute */
 							else
 							{
+							  exp_eq_no_eq:
 								//check if not id or class attributes, if so, then error
 								if (spec_case != NONE)
 								{
@@ -1058,6 +1054,7 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 								//no need to check return bool since there will always be at least 1 allocated char
 								string_putchar(&attr_name, *raw_html);
 								attr_state = READING_NAME;
+								break;
 							}
 							break;
 
@@ -1074,11 +1071,6 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 							else if (isspace(*raw_html))
 							{
 								break;
-							}
-							//check for invalids
-							else if (*raw_html == '`' || *raw_html == '=')
-							{
-								//TODO report invalid char
 							}
 							/* CASE anything else - unquoted */
 							else
@@ -1123,21 +1115,21 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 						
 						/* CASE READING UNQUOTED ATTRIBUTE */
 						case READING_ATTR_NQ:
+							/* CASE '/' read */
+							if (self_closing_slash)
+							{
+								fprintf(stderr, "html_parser: parse error: invalid character '/' - will be put into the element attribute. Line: %zu Col: %zu\n", line_count, col_count);
+								if (!string_putchar(&attr_val, '/'))
+									goto alloc_err;
+								self_closing_slash = false;
+							}
+
 							/* CASE whitespace - end */
 							if (isspace(*raw_html))
 							{
 								//finalize attributes and return to default
 								attr_state = DEFAULT;
 								goto finalize_attr;
-							}
-							//check for invalids
-							for (unsigned i = 0; i < 4; i++)
-							{
-								if (*raw_html == unquoted_invalid_attr_chars[i])
-								{
-									//TODO report error - invalid char
-									break;
-								}
 							}
 							/* CASE anything else - write to string */
 							if (!string_putchar(&attr_val, *raw_html))
