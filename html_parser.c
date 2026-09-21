@@ -351,6 +351,7 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 
 	//boolean that notifies that whitespace has been read
 	bool trailing_whitespace = false;
+	bool end_err_reported = false;
 
 	//boolean that notifies that a self-closing slash has been read (the '/' from "/>")
 	bool self_closing_slash = false;
@@ -414,7 +415,7 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 				else if (*raw_html == '?')
 				{	
 					//link text element, if exists
-					if (curr_elem != NULL)
+					if (curr_elem != NULL && !curr_elem_linked)
 					{
 						link_element(curr_elem, element_stack_peek(&stack));
 					}
@@ -424,10 +425,17 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 				else if (*raw_html == "/")
 				{
 					//link element if exists
-					if (curr_elem != NULL)
+					if (curr_elem != NULL && !curr_elem_linked)
 					{
 						link_element(curr_elem, element_stack_peek(&stack));
+						//leave it on the table for "</>" case
+						curr_elem_linked = true;
 					}
+
+					//set attributes for state entry
+					end_err_reported = false;
+					trailing_whitespace = false;
+
 					state = ELEM_END;
 				}
 				/* CASE "< " */
@@ -455,7 +463,7 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 				else
 				{	
 					//link TEXT element
-					if (curr_elem)
+					if (curr_elem != NULL && !curr_elem_linked)
 					{
 						link_element(curr_elem, element_stack_peek(&stack));	//if text was found, link
 					}
@@ -523,7 +531,7 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 				else
 				{
 					//link element if exists
-					if (curr_elem != NULL)
+					if (curr_elem != NULL && !curr_elem_linked)
 					{
 						link_element(curr_elem, element_stack_peek(&stack));
 					}
@@ -538,7 +546,7 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 				if (*raw_html == '-')
 				{
 					//link text element
-					if (curr_elem != NULL)
+					if (curr_elem != NULL && !curr_elem_linked)
 					{
 						link_element(curr_elem, element_stack_peek(&stack));
 					}
@@ -675,13 +683,11 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 						self_closing_slash = false;
 					}
 
+					//links element
 					if (!finalize_element_name(curr_elem, &elem_name, &stack))
 					{
 						goto alloc_err;
 					}
-
-					//link now that we know it's a valid element
-					link_element(curr_elem, element_stack_peek(&stack));
 					
 					//reset curr_element (nothing to add to this one)
 					curr_elem = NULL;
@@ -696,13 +702,11 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 					fprintf(stderr, "html_parser: unexpected '/' in element name tag. Ignoring until '>'. Line: %zu Col: %zu\n", line_count, col_count);
 					
 					//still treat the part before '/' as an element
+					//links element
 					if (!finalize_element_name(curr_elem, &elem_name, &stack))
 					{
 						goto alloc_err;
 					}
-
-					//link now that we know it's a valid element
-					link_element(curr_elem, element_stack_peek(&stack));
 					
 					//reset curr_element (nothing to add to this one)
 					curr_elem = NULL;
@@ -720,18 +724,19 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 				/* CASE err (improperly closed tag) */
 				else if (*raw_html == '<')
 				{
-					//TODO error recovery
+					fprintf(stderr, "html_parser: parse error: invalid '<' found. Will still get parsed into element name. Line: %zu Col: %zu\n", line_count, col_count);
+					goto elem_name_putchar;
 				}
 				/* CASE WHITESPACE - move to attribute reading */
 				else if (isspace(*raw_html))
 				{
+					//links element
 					if (!finalize_element_name(curr_elem, &elem_name, &stack))
 					{
 						goto alloc_err;
 					}
-
-					//link now
-					link_element(curr_elem, element_stack_peek(&stack));
+					
+					//finalize links element
 					curr_elem_linked = true;
 
 					//leave curr_elem still on the table
@@ -740,6 +745,7 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 				/* CASE reading element name */
 				else
 				{
+				  elem_name_putchar:
 					//add char (convert to lowercase)
 					if (!string_putchar(&elem_name, convert_to_lowercase(*raw_html)))
 					{
@@ -755,9 +761,15 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 				{
 					trailing_whitespace = false;
 
+					//error recovery for "</>"
 					if (elem_name.length == 0)
 					{
-						//TODO some error recovery for "</>"
+						fprintf(stderr, "html_parser: warn: invalid end tag, will be treated as text. Line: %zu Col: %zu\n", line_count, col_count);
+						if (!element_putchar(curr_elem, '<') ||
+							!element_putchar(curr_elem, '/') ||
+							!element_putchar(curr_elem, '>'))
+							goto alloc_err;
+						state = TEXT;
 						break;
 					}
 
@@ -810,14 +822,20 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 				/* CASE invalid char ('<') */
 				else if (*raw_html == '<')
 				{
-					//TODO some error recovery
+					fprintf(stderr, "html_parser: parse error: invalid character '<'. Will still get parsed. Line: %zu Col: %zu\n", line_count, col_count);
+					goto elem_end_putchar;
 				}
 				/* CASE reading char */
 				else
 				{
+				  elem_end_putchar:
 					if (trailing_whitespace)
-					{
-						//TODO some error recovery for stuff like </div smth
+					{	
+						if (!end_err_reported)
+						{
+							fprintf(stderr, "html_parser: parse error: element end tag attribute found and will be ignored. Line: %zu Col: %zu\n", line_count, col_count);
+							end_err_reported = true;
+						}
 					}
 					if (!string_putchar(&elem_name, *raw_html))
 					{
@@ -881,13 +899,6 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 							}
 							else
 							{
-								spec_case = determine_special_case(&attr_name);
-								if (spec_case != NONE)
-								{
-									fprintf(stderr, "html_parser: valueless %s attribute. Will be treated as a boolean attribute. Line: %zu Col: %zu\n",
-										spec_case == ID ? "id" : "class",
-										line_count, col_count);
-								}
 								//add other attribute (valueless)
 								if (!add_to_other_attr(&other_attr, &attr_name, NULL))
 									goto alloc_err;
@@ -923,7 +934,19 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 					
 					if (*raw_html == '<' & attr_state != READING_ATTR_Q)
 					{
-						//TODO report unproper element end (case "<div<span>")
+						fprintf(stderr, "html_parser: parse error: invalid character: '<'. Will still get parsed into attributes. Line: %zu Col: %zu\n", line_count, col_count);
+						if (attr_state == READING_ATTR_NQ || attr_state == QUOTES_OR_NOT)
+						{
+							if (!string_putchar(&attr_val, '<'))
+								goto alloc_err;
+							attr_state = READING_ATTR_NQ;
+						}
+						else if (attr_state == READING_NAME || attr_state == DEFAULT || attr_state == EXP_EQ)
+						{
+							if (!string_putchar(&attr_name, '<'))
+								goto alloc_err;
+							attr_state = READING_NAME;
+						}
 						break;
 					}
 
@@ -1034,18 +1057,10 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 							else
 							{
 							  exp_eq_no_eq:
-								//check if not id or class attributes, if so, then error
-								if (spec_case != NONE)
-								{
-									//TODO report error - valueless id or class
-								}
 								//otherwise just valueless element - add to other_attr
-								else 
+								if (!add_to_other_attr(&other_attr, &attr_name, NULL))
 								{
-									if (!add_to_other_attr(&other_attr, &attr_name, NULL))
-									{
-										goto alloc_err;
-									}
+									goto alloc_err;
 								}
 								
 								//reset attr_name buffer
@@ -1096,7 +1111,6 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 							else if (spec_case == CLASS && attr_val.length > 0 && isspace(*raw_html))
 							{
 								//write and reset attr_val
-								//TODO make sure that this doesn't get flagged as valueless element
 								if (!write_class_to_element(curr_elem, &attr_val, dst))
 								{
 									goto alloc_err;
