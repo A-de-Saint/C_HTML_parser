@@ -6,8 +6,8 @@ BIN_DIR = bin
 STATIC = static_lib
 DYNAMIC = dynamic_lib
 
-SRCS = $(SRC_DIR)/*.c
-OBJS = $(patsubst %.c, $(BIN_DIR)/%.o, $(SRCS))
+SRCS = $(wildcard $(SRC_DIR)/*.c)
+OBJS = $(patsubst $(SRC_DIR)/%.c, $(BIN_DIR)/%.o, $(SRCS))
 
 STATIC_TARGET = $(STATIC)/libhtmlparser.a
 DYNAMIC_TARGET = $(DYNAMIC)/libhtmlparser.so
@@ -26,7 +26,7 @@ $(STATIC_TARGET): $(OBJS) | $(STATIC)
 $(DYNAMIC_TARGET): $(OBJS) | $(DYNAMIC)
 	gcc --shared -o $@ $^
 
-$(OBJS): $(SRCS) | $(BIN_DIR)
+$(BIN_DIR)/%.o: $(SRC_DIR)/%.c | $(BIN_DIR)
 	$(CC) $(CFLAGS) -c $< -o $@
 
 $(STATIC):
