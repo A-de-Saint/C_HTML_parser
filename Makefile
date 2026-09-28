@@ -27,7 +27,7 @@ $(DYNAMIC_TARGET): $(OBJS) | $(DYNAMIC)
 	gcc --shared -o $@ $^
 
 $(BIN_DIR)/%.o: $(SRC_DIR)/%.c | $(BIN_DIR)
-	$(CC) $(CFLAGS) -c $< -o $@
+	$(CC) -fPIC $(CFLAGS) -c $< -o $@
 
 $(STATIC):
 	mkdir -p $@

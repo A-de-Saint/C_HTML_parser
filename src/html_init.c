@@ -78,7 +78,7 @@ void free_all_siblings(html_element_t *first_child)
 	while (first_child != NULL)
 	{
 		//free all that was allocated
-		free_element_data(first_child);
+		element_free_data(first_child);
 		if (first_child->first_child != NULL)
 			free_all_siblings(first_child->first_child);
 		html_element_t *next_tmp = first_child->next_sibling;

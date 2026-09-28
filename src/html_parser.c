@@ -1,9 +1,29 @@
-#include "html_parser.h"
 #include "html_parser_internal.h"
 #include "elements_internal.h"
 #include "classes_internal.h"
 #include <ctype.h>
 #include <stdio.h>
+
+//fallthrough attribute to stop gcc from complaining
+#define FALLTHROUGH __attribute__((fallthrough));
+
+//names of the tagged elements (indices match the enum number)
+const char *tag_names[TAG_COUNT] = {
+	[TAG_DIV] 		= "div",
+	[TAG_SPAN] 		= "span",
+	[TAG_A] 		= "a",
+	[TAG_BR] 		= "br",
+	[TAG_IMG] 		= "img",
+	[TAG_LINK] 		= "link",
+	[TAG_META] 		= "meta",
+	[TAG_P] 		= "p",
+	[TAG_BODY] 		= "body",
+	[TAG_HEAD] 		= "head",
+	[TAG_HTML] 		= "html",
+	[TAG_SOURCE]	= "source",
+	[TAG_COL] 		= "col",
+	[TAG_HR]		= "hr"
+};
 
 typedef enum {
 	TEXT,
@@ -300,6 +320,8 @@ bool finalize_element_name(html_element_t *curr_elem, string_t *elem_name, eleme
 			return false;
 		}
 	}
+
+	return true;
 }
 
 /* FSM */
@@ -422,7 +444,7 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 					state = BOGUS_COMMENT;
 				}
 				/* CASE "</" */
-				else if (*raw_html == "/")
+				else if (*raw_html == '/')
 				{
 					//link element if exists
 					if (curr_elem != NULL && !curr_elem_linked)
@@ -469,7 +491,7 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 					}
 
 					//an element name must start with an ASCII letter - if not, error and ignore whole token
-					if (!(*raw_html  >= 'a' && *raw_html <= 'z') || !(!raw_html <= 'A' && *raw_html >= 'Z'))
+					if (!(*raw_html  >= 'a' && *raw_html <= 'z') || !(*raw_html <= 'A' && *raw_html >= 'Z'))
 					{
 						fprintf(stderr, "html_parser: Element token not starting with an ascii letter will be ignored (treated as a bogus comment). Line: %zu Col: %zu\n", line_count, col_count);
 						curr_elem = NULL;
@@ -777,14 +799,14 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 					size_t stack_size_backup = stack.size;
 					while ((pop_elem = element_stack_pop(&stack)) != NULL)
 					{
-						char *pop_elem_name = pop_elem->properties.element_name;
+						const char *pop_elem_name = pop_elem->properties.element_name;
 						//case element name not explicitly said, need to get it
 						if (!pop_elem_name)
 						{
 							pop_elem_name = tag_names[pop_elem->properties.tag];
 						}
 
-						if (string_charrar_strcmp(&elem_name, pop_elem_name) != 0)
+						if (string_chararr_strcmp(&elem_name, pop_elem_name) != 0)
 						{
 							fprintf(stderr, "html_parser: warning: expected end tag for element: %s, but instead got '</", pop_elem_name);
 							for (size_t i = 0; i < elem_name.length; i++)
@@ -932,7 +954,7 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 					}
 
 					
-					if (*raw_html == '<' & attr_state != READING_ATTR_Q)
+					if (*raw_html == '<' && attr_state != READING_ATTR_Q)
 					{
 						fprintf(stderr, "html_parser: parse error: invalid character: '<'. Will still get parsed into attributes. Line: %zu Col: %zu\n", line_count, col_count);
 						if (attr_state == READING_ATTR_NQ || attr_state == QUOTES_OR_NOT)
@@ -978,7 +1000,7 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 					else if (*raw_html == '=' && attr_state != READING_ATTR_Q && attr_state != EXP_EQ)
 						fprintf(stderr, "html_parser: parse error: invalid character '='. Will still get parsed. Line: %zu Col: %zu\n", line_count, col_count);
 					else if ((*raw_html == '\'' || *raw_html == '"') && attr_state != READING_ATTR_Q && attr_state != QUOTES_OR_NOT)
-						fprintf(stderr, "html_parser: parse error: invalid character '%s'. Will still get parsed. Line: %zu Col: %zu\n", *raw_html,line_count, col_count);
+						fprintf(stderr, "html_parser: parse error: invalid character '%c'. Will still get parsed. Line: %zu Col: %zu\n", *raw_html,line_count, col_count);
 					else if (*raw_html == '`' && attr_state != READING_ATTR_Q)
 						fprintf(stderr, "html_parser: parse error: invalid character '`'. Will still get parsed. Line: %zu Col: %zu\n", line_count, col_count);
 
@@ -1094,7 +1116,7 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 
 								//no need to check return val, always should be true
 								string_putchar(&attr_val, *raw_html);
-								state = READING_ATTR_NQ;
+								attr_state = READING_ATTR_NQ;
 							}
 							break;
 
@@ -1226,12 +1248,12 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 		case END_TWODASH_READ:
 			if (!element_putchar(curr_elem, '-'))
 				goto alloc_err;
-		case END_DASH_READ:
+		FALLTHROUGH case END_DASH_READ:
 			if (!element_putchar(curr_elem, '-'))
 				goto alloc_err;
 		//comment-like cases
-		case COMMENT:
-		case BOGUS_COMMENT:
+		FALLTHROUGH case COMMENT:
+		FALLTHROUGH case BOGUS_COMMENT:
 		case DOCTYPE:
 			fprintf(stderr, "html_parser: comment-like syntax not closed before reaching EOF. Will be treated as closed upon EOF.\n");
 			break;
@@ -1254,7 +1276,7 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 	{
 		html_element_t *pop_elem = element_stack_pop(&stack);
 
-		char *pop_elem_name = pop_elem->properties.element_name;
+		const char *pop_elem_name = pop_elem->properties.element_name;
 		//get element name
 		if (!pop_elem_name)
 		{
@@ -1294,7 +1316,6 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 		free(curr_elem);
 	}
 
-  func_end:
 	//free entire tree (all-or-nothing approach if allocation fails)
 	html_tree_free(dst);
   	

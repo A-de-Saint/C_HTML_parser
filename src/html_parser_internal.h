@@ -40,23 +40,7 @@ typedef enum {
 	TAG_OTHER
 } tag_t;
 
-//names of the tagged elements (indices match the enum number)
-const char *tag_names[TAG_COUNT] = {
-	[TAG_DIV] 		= "div",
-	[TAG_SPAN] 		= "span",
-	[TAG_A] 		= "a",
-	[TAG_BR] 		= "br",
-	[TAG_IMG] 		= "img",
-	[TAG_LINK] 		= "link",
-	[TAG_META] 		= "meta",
-	[TAG_P] 		= "p",
-	[TAG_BODY] 		= "body",
-	[TAG_HEAD] 		= "head",
-	[TAG_HTML] 		= "html",
-	[TAG_SOURCE]	= "source",
-	[TAG_COL] 		= "col",
-	[TAG_HR]		= "hr"
-};
+extern const char *tag_names[TAG_COUNT];
 
 //representation of an html element
 struct html_element {

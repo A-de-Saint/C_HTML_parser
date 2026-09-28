@@ -26,7 +26,7 @@ bool string_init(string_t *str, size_t init_capacity);
 bool string_resize(string_t *str);
 
 //compares string_t to char array
-int string_chararr_strcmp(string_t *str, char *strc);
+int string_chararr_strcmp(string_t *str, const char *strc);
 
 //compares string_t and string_t
 int string_string_strcmp(string_t *str1, string_t *str2);

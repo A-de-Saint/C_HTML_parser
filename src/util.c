@@ -20,7 +20,7 @@ bool string_resize(string_t *str)
 	return true;
 }
 
-int string_chararr_strcmp(string_t *str, char *strc)
+int string_chararr_strcmp(string_t *str, const char *strc)
 {
 	size_t i = 0;
 	int diff_tmp;
@@ -40,7 +40,7 @@ int string_chararr_strcmp(string_t *str, char *strc)
 
 int string_string_strcmp(string_t *str1, string_t *str2)
 {
-	int i = 0;
+	size_t i = 0;
 	bool same_len = str1->length == str2->length;
 	int diff_tmp;
 	while (true)
