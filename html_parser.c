@@ -1192,6 +1192,96 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 		raw_html++;
 	}
 
+	/* EOF REACHED */
+	//check which state the FSM ended in
+	switch (state)
+	{
+		/* states that are supposed to fall through */
+		case LT_READ:
+			if (!element_putchar(curr_elem, '<'))
+				goto alloc_err;
+			goto text_case;
+		case EXCLAM_READ:
+			if (!element_putchar(curr_elem, '<') ||
+				!element_putchar(curr_elem, '!'))
+				goto alloc_err;
+			goto text_case;
+		case START_DASH_READ:
+			if (!element_putchar(curr_elem, '<') ||
+				!element_putchar(curr_elem, '!') ||
+				!element_putchar(curr_elem, '-'))
+				goto alloc_err;
+			goto text_case;
+		//TEXT (expected to end like this)
+		case TEXT:
+		  text_case:
+			if (curr_elem != NULL && !curr_elem_linked)
+			{
+				link_element(curr_elem, element_stack_peek(&stack));
+				curr_elem_linked = true;
+			}
+			break;
+
+		//comment ending dashes (will fall through, expected)
+		case END_TWODASH_READ:
+			if (!element_putchar(curr_elem, '-'))
+				goto alloc_err;
+		case END_DASH_READ:
+			if (!element_putchar(curr_elem, '-'))
+				goto alloc_err;
+		//comment-like cases
+		case COMMENT:
+		case BOGUS_COMMENT:
+		case DOCTYPE:
+			fprintf(stderr, "html_parser: comment-like syntax not closed before reaching EOF. Will be treated as closed upon EOF.\n");
+			break;
+		
+		//element-related cases (errors)
+		case ELEM_NAME:
+			fprintf(stderr, "html_parser: reading element name ended unexpectedly with EOF. Element will be discarded.\n");
+			//TODO free curr_elem
+			break;
+		case ELEM_PROPERTIES:
+			fprintf(stderr, "html_parser: reading element properties ended unexpectedly with EOF. Incomplete element will be appended\n");
+			break;
+		case ELEM_END:
+			fprintf(stderr, "html_parser: reading element end tag ended unexpectedly with EOF. Token will be discarded.\n");
+			break;
+	}
+
+	/* STACK CHECK at EOF */
+	while (stack.size > 1)
+	{
+		html_element_t *pop_elem = element_stack_pop(&stack);
+
+		char *pop_elem_name = pop_elem->properties.element_name;
+		//get element name
+		if (!pop_elem_name)
+		{
+			pop_elem_name = tag_names[pop_elem->properties.tag];
+		}
+
+		fprintf(stderr, "html_parser: element not ended before EOF: <%s>. Will be treated as if it ended upon EOF.\n", pop_elem_name);
+	}
+
+	//TODO unify freeing stuff
+	
+	//free buffers
+	string_free(&other_attr);
+	string_free(&attr_val);
+	string_free(&elem_name);
+	string_free(&attr_name);
+	element_stack_free(&stack);
+
+	//free curr_elem (if needed)
+	if (!curr_elem_linked && curr_elem != NULL)
+	{
+		element_free_data(curr_elem);
+		free(curr_elem);
+	}
+
+	return 0;
+
   alloc_err:
 	// malloc/realloc failed, free everything
 	
@@ -1200,16 +1290,19 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 	//if work was being done on curr_elem, free it also
 	if (curr_elem != NULL && !curr_elem_linked)
 	{
-		//TODO free element
+		element_free_data(curr_elem);
+		free(curr_elem);
 	}
 
   func_end:
-	//TODO free entire tree (all-or-nothing approach)
+	//free entire tree (all-or-nothing approach if allocation fails)
+	html_tree_free(dst);
   	
-  f_ssss:
 	string_free(&other_attr);
-  f_sss:
+  f_ssss:
 	string_free(&attr_val);
+  f_sss:
+	string_free(&attr_name);
   f_ss:
 	string_free(&elem_name);
   f_s:

@@ -72,3 +72,28 @@ html_tree_t *html_tree_init(void)
 	tree->first_element = doc_elem;
 	return tree;
 }
+
+//recursive function, which frees all siblings and their children
+void free_all_siblings(html_element_t *first_child)
+{
+	while (first_child != NULL)
+	{
+		//free all that was allocated
+		free_element_data(first_child);
+		if (first_child->first_child != NULL)
+			free_all_siblings(first_child->first_child);
+		html_element_t *next_tmp = first_child->next_sibling;
+		free(first_child);	//free element itself
+		first_child = next_tmp;
+	}
+}
+
+void html_tree_free(html_tree_t *tree)
+{
+	if (!tree)
+		return;
+
+	//call the function upon all of the 
+	free_all_siblings(tree->first_element->first_child);
+	free(tree->first_element);
+}

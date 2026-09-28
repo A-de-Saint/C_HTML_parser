@@ -15,6 +15,7 @@
 html_element_t *element_init(node_type_t type, html_element_t *parent);
 
 //frees element's data (properties or text)
+//pointers to parent, sibling and child are valid after this operation
 void element_free_data(html_element_t *elem);
 
 static inline void element_assign_first_child(html_element_t *elem, html_element_t *first_child)
