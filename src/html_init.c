@@ -92,7 +92,13 @@ void html_tree_free(html_tree_t *tree)
 	if (!tree)
 		return;
 
-	//call the function upon all of the 
+	//call the recursive function on first child
 	free_all_siblings(tree->first_element->first_child);
 	free(tree->first_element);
+
+	//free class list
+	class_list_free(&tree->classes);
+
+	//free the tree itself
+	free(tree);
 }

@@ -1,7 +1,16 @@
 #include "classes_internal.h"
 #include "util.h"
 
-bool class_list_add(class_list_t *list, const char *name)
+static inline bool class_list_resize(class_list_t *list)
+{
+	char **tmp = realloc(list->data, (list->capacity * 2) * sizeof(char *));
+	if (!tmp)
+		return false;
+	list->data = tmp;
+	return true;
+}
+
+bool class_list_add(class_list_t *list, char *name)
 {
 	if (list->size >= list->capacity)
 		if (!class_list_resize(list))
@@ -19,4 +28,5 @@ int find_class_num(class_list_t *list, const char *name)
 			continue;
 		return i;
 	}
+	return -1;
 }
