@@ -6,7 +6,6 @@
 
 #include <stdlib.h>
 #include <stdbool.h>
-#include "html_parser.h"
 #include "html_parser_internal.h"
 
 //allocates new element and fills in only type and parent pointers

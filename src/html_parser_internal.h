@@ -1,7 +1,7 @@
 #ifndef HTML_PARSER_INTERNAL_H
 #define HTML_PARSER_INTERNAL_H
 
-#include "html_parser.h"
+#include "../include/html_parser.h"
 #include "util.h"
 
 typedef struct class_list {

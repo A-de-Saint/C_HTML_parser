@@ -1,5 +1,4 @@
 #include <stdlib.h>
-#include "html_parser.h"
 #include "html_parser_internal.h"
 #include "elements_internal.h"
 

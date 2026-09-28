@@ -1,7 +1,6 @@
 #ifndef CLASSES_INTERNAL_H
 #define CLASSES_INTERNAL_H
 
-#include "html_parser.h"
 #include "html_parser_internal.h"
 
 //adds an entry to class list
