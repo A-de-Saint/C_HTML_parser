@@ -329,7 +329,7 @@ bool finalize_element_name(html_element_t *curr_elem, string_t *elem_name, eleme
 //1 - NULL input
 //2 - allocation failure
 //3 - invalid HTML
-int parse_html(const char *raw_html, html_tree_t *dst)
+int parse_html(RAW_HTML_TYPE raw_html, html_tree_t *dst)
 {
 	//NULL checks
 	if (!raw_html || !dst)
@@ -383,11 +383,14 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 	size_t line_count = 1;
 	size_t col_count = 0;
 
+	//current character that is being read in the FSM
+	char currchar;
+
 	//finally, the FSM
-	while (*raw_html != '\0')
+	while ((currchar = RAW_HTML_GETCHAR(raw_html)) != RAW_HTML_EOF)
 	{
 		//keep track of which line and column it is
-		if (*raw_html == '\n')
+		if (currchar == '\n')
 		{
 			line_count++;
 			col_count = 0;
@@ -400,7 +403,7 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 			/* TEXT */
 			case TEXT:
 				/* case '<' -> move to LT_READ */
-				if (*raw_html == '<')
+				if (currchar == '<')
 				{	
 					state = LT_READ;
 				}
@@ -418,7 +421,7 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 						}
 						curr_elem_linked = false;
 					}
-					if (!element_putchar(curr_elem, *raw_html))
+					if (!element_putchar(curr_elem, currchar))
 					{
 						goto alloc_err;
 					}
@@ -429,12 +432,12 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 			/* '<' READ */
 			case LT_READ:
 				/* CASE "<!" */
-				if (*raw_html == '!')
+				if (currchar == '!')
 				{
 					state = EXCLAM_READ;
 				}
 				/* CASE "<?" */
-				else if (*raw_html == '?')
+				else if (currchar == '?')
 				{	
 					//link text element, if exists
 					if (curr_elem != NULL && !curr_elem_linked)
@@ -444,7 +447,7 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 					state = BOGUS_COMMENT;
 				}
 				/* CASE "</" */
-				else if (*raw_html == '/')
+				else if (currchar == '/')
 				{
 					//link element if exists
 					if (curr_elem != NULL && !curr_elem_linked)
@@ -461,7 +464,7 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 					state = ELEM_END;
 				}
 				/* CASE "< " */
-				else if (isspace(*raw_html))
+				else if (isspace(currchar))
 				{
 					//TODO could be put in a func
 					if (!curr_elem)
@@ -474,7 +477,7 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 						}
 						curr_elem_linked = false;
 					}
-					if (!element_putchar(curr_elem, '<') || !element_putchar(curr_elem, *raw_html))
+					if (!element_putchar(curr_elem, '<') || !element_putchar(curr_elem, currchar))
 					{
 						goto alloc_err;
 					}
@@ -491,7 +494,7 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 					}
 
 					//an element name must start with an ASCII letter - if not, error and ignore whole token
-					if (!(*raw_html  >= 'a' && *raw_html <= 'z') || !(*raw_html <= 'A' && *raw_html >= 'Z'))
+					if (!(currchar  >= 'a' && currchar <= 'z') || !(currchar <= 'A' && currchar >= 'Z'))
 					{
 						fprintf(stderr, "html_parser: Element token not starting with an ascii letter will be ignored (treated as a bogus comment). Line: %zu Col: %zu\n", line_count, col_count);
 						curr_elem = NULL;
@@ -513,7 +516,7 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 					state = ELEM_NAME;
 
 					//no need to check for return value, since if alloc was good, size cannot be greater than capacity
-					string_putchar(&elem_name, *raw_html);
+					string_putchar(&elem_name, currchar);
 				}
 
 				break;
@@ -521,12 +524,12 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 			/* CASE "<!" */
 			case EXCLAM_READ:
 				/* CASE "<!-" */
-				if (*raw_html == '-')
+				if (currchar == '-')
 				{
 					state = START_DASH_READ;
 				}
 				/* CASE "<! " */
-				else if (isspace(*raw_html))
+				else if (isspace(currchar))
 				{
 					if (!curr_elem)
 					{
@@ -542,7 +545,7 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 					//write "<! " into TEXT element
 					if (!element_putchar(curr_elem, '<')		||
 						!element_putchar(curr_elem, '!')		||
-						!element_putchar(curr_elem, *raw_html))
+						!element_putchar(curr_elem, currchar))
 					{
 						goto alloc_err;
 					}
@@ -565,7 +568,7 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 			/* CASE "<!-" */
 			case START_DASH_READ:
 				/* CASE "<!--" - reading comment */
-				if (*raw_html == '-')
+				if (currchar == '-')
 				{
 					//link text element
 					if (curr_elem != NULL && !curr_elem_linked)
@@ -599,7 +602,7 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 					if (!element_putchar(curr_elem, '<')		||
 						!element_putchar(curr_elem, '!')		||
 						!element_putchar(curr_elem, '-')		||
-						!element_putchar(curr_elem, *raw_html))
+						!element_putchar(curr_elem, currchar))
 					{
 						goto alloc_err;
 					}
@@ -614,28 +617,28 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 			/* CASE BOGUS COMMENT */
 			//bogus comments are discarded for this design, as if they never existed
 			case BOGUS_COMMENT:
-				if (*raw_html == '>')
+				if (currchar == '>')
 					state = TEXT;
 				break;
 
 			/* CASE DOCTYPE */
 			//doctype-like tokens also get discarded
 			case DOCTYPE:
-				if (*raw_html == '>')
+				if (currchar == '>')
 					state = TEXT;
 				break;
 
 			/* CASE COMMENT */
 			case COMMENT:
 				/* CASE '-' */
-				if (*raw_html == '-')
+				if (currchar == '-')
 				{
 					state = END_DASH_READ;
 				}
 				/* case anything else - continue comment */
 				else
 				{
-					if (!element_putchar(curr_elem, *raw_html))
+					if (!element_putchar(curr_elem, currchar))
 					{
 						goto alloc_err;
 					}
@@ -645,7 +648,7 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 			/* CASE "comment-" */
 			case END_DASH_READ:
 				/* CASE "--" */
-				if (*raw_html == '-')
+				if (currchar == '-')
 				{
 					state = END_TWODASH_READ;
 				}
@@ -653,7 +656,7 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 				else 
 				{
 					if (!element_putchar(curr_elem, '-')	||
-						!element_putchar(curr_elem, *raw_html))
+						!element_putchar(curr_elem, currchar))
 					{
 						goto alloc_err;
 					}
@@ -665,7 +668,7 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 			/* CASE "comment--" */
 			case END_TWODASH_READ:
 				/* CASE "-->" - end of comment */
-				if (*raw_html == '>')
+				if (currchar == '>')
 				{
 					//link comment, reset curr_elem
 					link_element(curr_elem, element_stack_peek(&stack));
@@ -674,7 +677,7 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 					state = TEXT;		//switch back to TEXT
 				}
 				/* CASE "---" -> just continue twodash (still two dashes at the end) */
-				else if (*raw_html == '-')
+				else if (currchar == '-')
 				{
 					//one '-' needs to be added, since only the two "--" at the end count
 					if (!element_putchar(curr_elem, '-'))
@@ -697,7 +700,7 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 			/* CASE ELEMENT_READ - reading element name */
 			case ELEM_NAME:
 				/* CASE END OF ELEMENT ('>') */
-				if (*raw_html == '>')
+				if (currchar == '>')
 				{
 					if (self_closing_slash)
 					{
@@ -738,19 +741,19 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 					state = BOGUS_COMMENT;		//to ignore until '>'
 				}
 				/* CASE slash - potentially self-closing */
-				else if (*raw_html == '/')
+				else if (currchar == '/')
 				{
 					self_closing_slash = true;
 					break;
 				}
 				/* CASE err (improperly closed tag) */
-				else if (*raw_html == '<')
+				else if (currchar == '<')
 				{
 					fprintf(stderr, "html_parser: parse error: invalid '<' found. Will still get parsed into element name. Line: %zu Col: %zu\n", line_count, col_count);
 					goto elem_name_putchar;
 				}
 				/* CASE WHITESPACE - move to attribute reading */
-				else if (isspace(*raw_html))
+				else if (isspace(currchar))
 				{
 					//links element
 					if (!finalize_element_name(curr_elem, &elem_name, &stack))
@@ -763,13 +766,16 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 
 					//leave curr_elem still on the table
 					state = ELEM_PROPERTIES;
+
+					//go directly to elem_properties (cannot increment now, since the next char might belong into the properties inner loop)
+					goto elem_properties_noincr;
 				}
 				/* CASE reading element name */
 				else
 				{
 				  elem_name_putchar:
 					//add char (convert to lowercase)
-					if (!string_putchar(&elem_name, convert_to_lowercase(*raw_html)))
+					if (!string_putchar(&elem_name, convert_to_lowercase(currchar)))
 					{
 						goto alloc_err;
 					}
@@ -779,7 +785,7 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 			/* CASE END OF ELEMENT ("</") */
 			case ELEM_END:
 				/* CASE end of ELEM_END */
-				if (*raw_html == '>')
+				if (currchar == '>')
 				{
 					trailing_whitespace = false;
 
@@ -836,13 +842,13 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 
 				}
 				/* CASE reading whitespace */
-				else if (isspace(*raw_html))
+				else if (isspace(currchar))
 				{
 					//ignore whitespace but notify the FSM
 					trailing_whitespace = true;
 				}
 				/* CASE invalid char ('<') */
-				else if (*raw_html == '<')
+				else if (currchar == '<')
 				{
 					fprintf(stderr, "html_parser: parse error: invalid character '<'. Will still get parsed. Line: %zu Col: %zu\n", line_count, col_count);
 					goto elem_end_putchar;
@@ -859,7 +865,7 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 							end_err_reported = true;
 						}
 					}
-					if (!string_putchar(&elem_name, *raw_html))
+					if (!string_putchar(&elem_name, currchar))
 					{
 						goto alloc_err;
 					}
@@ -869,6 +875,7 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 			/* CASE ELEM_PROPERTIES */
 			//this one is basically it's own space (moving raw_html forth without breaking)
 			case ELEM_PROPERTIES:
+			  elem_properties_noincr:
 				
 				//enum instances (states)
 				elem_attr_states_t attr_state = DEFAULT;
@@ -877,11 +884,11 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 				char curr_quote = '\0';
 
 				//inner loop
-				while (*raw_html != '\0')
+				while ((currchar = RAW_HTML_GETCHAR(raw_html)) != RAW_HTML_EOF)
 				{	
 					//keep track of which line and column it is
 					//need to do this again inside inner loop
-					if (*raw_html == '\n')
+					if (currchar == '\n')
 					{
 						line_count++;
 						col_count = 0;
@@ -890,7 +897,7 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 						col_count++;
 
 					//check if element is ending
-					if (*raw_html == '>' && attr_state != READING_ATTR_Q)
+					if (currchar == '>' && attr_state != READING_ATTR_Q)
 					{
 						if (self_closing_slash)
 						{
@@ -954,7 +961,7 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 					}
 
 					
-					if (*raw_html == '<' && attr_state != READING_ATTR_Q)
+					if (currchar == '<' && attr_state != READING_ATTR_Q)
 					{
 						fprintf(stderr, "html_parser: parse error: invalid character: '<'. Will still get parsed into attributes. Line: %zu Col: %zu\n", line_count, col_count);
 						if (attr_state == READING_ATTR_NQ || attr_state == QUOTES_OR_NOT)
@@ -973,7 +980,7 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 					}
 
 					/* CASE '/' - expect slash end */
-					if (*raw_html == '/' && attr_state != READING_ATTR_Q)
+					if (currchar == '/' && attr_state != READING_ATTR_Q)
 					{
 						//determine next state based on current state
 						if (attr_state == DEFAULT)
@@ -997,11 +1004,11 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 						goto after_switch;		//don't continue into the inner FSM, report (and add '/' afterward)
 					}
 					/* CASE other invalid characters */
-					else if (*raw_html == '=' && attr_state != READING_ATTR_Q && attr_state != EXP_EQ)
+					else if (currchar == '=' && attr_state != READING_ATTR_Q && attr_state != EXP_EQ)
 						fprintf(stderr, "html_parser: parse error: invalid character '='. Will still get parsed. Line: %zu Col: %zu\n", line_count, col_count);
-					else if ((*raw_html == '\'' || *raw_html == '"') && attr_state != READING_ATTR_Q && attr_state != QUOTES_OR_NOT)
-						fprintf(stderr, "html_parser: parse error: invalid character '%c'. Will still get parsed. Line: %zu Col: %zu\n", *raw_html,line_count, col_count);
-					else if (*raw_html == '`' && attr_state != READING_ATTR_Q)
+					else if ((currchar == '\'' || currchar == '"') && attr_state != READING_ATTR_Q && attr_state != QUOTES_OR_NOT)
+						fprintf(stderr, "html_parser: parse error: invalid character '%c'. Will still get parsed. Line: %zu Col: %zu\n", currchar,line_count, col_count);
+					else if (currchar == '`' && attr_state != READING_ATTR_Q)
 						fprintf(stderr, "html_parser: parse error: invalid character '`'. Will still get parsed. Line: %zu Col: %zu\n", line_count, col_count);
 
 
@@ -1016,14 +1023,14 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 							attr_val.length = 0;
 
 							/* CASE whitespace - ignore */
-							if (isspace(*raw_html))
+							if (isspace(currchar))
 							{
 								break;
 							}
 
 							//else
 							//no need to check  return value, since the buffer is empty
-							string_putchar(&attr_name, *raw_html);
+							string_putchar(&attr_name, currchar);
 							attr_state = READING_NAME;
 							break;
 
@@ -1040,14 +1047,14 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 							}
 
 							/* CASE whitespace - continue to expect '=' or new attribute */
-							if (isspace(*raw_html))
+							if (isspace(currchar))
 							{
 								//try to get special case (ID or CLASS)
 								spec_case = determine_special_case(&attr_name);
 								attr_state = EXP_EQ;
 							}
 							/* CASE '=' - skip EXP_EQ state */
-							else if (*raw_html == '=')
+							else if (currchar == '=')
 							{
 								//try to get special case
 								spec_case = determine_special_case(&attr_name);
@@ -1056,7 +1063,7 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 							/* CASE anything else - write to name */
 							else
 							{
-								if (!string_putchar(&attr_name, convert_to_lowercase(*raw_html)))
+								if (!string_putchar(&attr_name, convert_to_lowercase(currchar)))
 								{
 									goto alloc_err;
 								}
@@ -1066,12 +1073,12 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 						/* CASE EXP_EQ */
 						case EXP_EQ:
 							/* CASE '=' - what is expected */
-							if (*raw_html == '=')
+							if (currchar == '=')
 							{
 								attr_state = QUOTES_OR_NOT;
 							}
 							//ignore whitespace
-							if (isspace(*raw_html))
+							if (isspace(currchar))
 							{
 								break;
 							}
@@ -1089,7 +1096,7 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 								attr_name.length = 0;
 
 								//no need to check return bool since there will always be at least 1 allocated char
-								string_putchar(&attr_name, *raw_html);
+								string_putchar(&attr_name, currchar);
 								attr_state = READING_NAME;
 								break;
 							}
@@ -1098,14 +1105,14 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 						/* CASE QUOTES_OR_NOT - determine if value is quoted or not */
 						case QUOTES_OR_NOT:
 							/* CASE QUOTES */
-							if (*raw_html == '"' || *raw_html == '\'')
+							if (currchar == '"' || currchar == '\'')
 							{
 								//save what the quotes started with
-								curr_quote = *raw_html;
+								curr_quote = currchar;
 								attr_state = READING_ATTR_Q;
 							}
 							//ignore whitespace
-							else if (isspace(*raw_html))
+							else if (isspace(currchar))
 							{
 								break;
 							}
@@ -1115,7 +1122,7 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 								attr_val.length = 0;	//just to be sure
 
 								//no need to check return val, always should be true
-								string_putchar(&attr_val, *raw_html);
+								string_putchar(&attr_val, currchar);
 								attr_state = READING_ATTR_NQ;
 							}
 							break;
@@ -1123,14 +1130,14 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 						/* CASE READING QUOTED VALUE */
 						case READING_ATTR_Q:
 							/* CASE end of read */
-							if (*raw_html == curr_quote)
+							if (currchar == curr_quote)
 							{
 								//finalize attributes and return to default
 								attr_state = DEFAULT;
 								goto finalize_attr;
 							}
 							/* CASE class and whitespace - multiple classes, write a single one */
-							else if (spec_case == CLASS && attr_val.length > 0 && isspace(*raw_html))
+							else if (spec_case == CLASS && attr_val.length > 0 && isspace(currchar))
 							{
 								//write and reset attr_val
 								if (!write_class_to_element(curr_elem, &attr_val, dst))
@@ -1142,7 +1149,7 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 							/* CASE anything else - write to attribute value */
 							else
 							{
-								if (!string_putchar(&attr_val, *raw_html))
+								if (!string_putchar(&attr_val, currchar))
 								{
 									goto alloc_err;
 								}
@@ -1161,14 +1168,14 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 							}
 
 							/* CASE whitespace - end */
-							if (isspace(*raw_html))
+							if (isspace(currchar))
 							{
 								//finalize attributes and return to default
 								attr_state = DEFAULT;
 								goto finalize_attr;
 							}
 							/* CASE anything else - write to string */
-							if (!string_putchar(&attr_val, *raw_html))
+							if (!string_putchar(&attr_val, currchar))
 							{
 								goto alloc_err;
 							}
@@ -1205,13 +1212,12 @@ int parse_html(const char *raw_html, html_tree_t *dst)
 					}
 				  after_switch:
 
-					raw_html++;
+
 				}
 				
 		}		
 
 		//end of loop
-		raw_html++;
 	}
 
 	/* EOF REACHED */
