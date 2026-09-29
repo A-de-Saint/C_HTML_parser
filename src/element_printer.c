@@ -15,8 +15,8 @@ void print_other_element_whereabouts(html_element_t *elem, const char *family_re
 		{
 			printf(" - ");
 			//determine how many characters to print
-			bool longer = elem->text.length <= 10;
-			size_t to_print = longer ?
+			bool shorter = elem->text.length <= 10;
+			size_t to_print = shorter ?
 				elem->text.length :
 				10;
 
@@ -27,10 +27,15 @@ void print_other_element_whereabouts(html_element_t *elem, const char *family_re
 
 			for (size_t i = 0; i < to_print; i++)
 			{
+				if (elem->text.data[i] == '\n')
+				{
+					printf("[\\n]");
+					continue;
+				}
 				putchar(elem->text.data[i]);
 			}
 
-			if (longer)
+			if (!shorter)
 				printf("...");
 			else
 			{
@@ -101,7 +106,14 @@ void print_element(html_element_t *elem, html_tree_t *tree, bool print_family_in
 			printf("<!--");
 		else putchar('"');
 		for (size_t i = 0; i < elem->text.length; i++)
+		{
+			if (elem->text.data[i] == '\n')
+			{
+				printf("[newline]");
+				continue;
+			}
 			putchar(elem->text.data[i]);
+		}
 		if (elem->type == NODE_COMMENT)
 			printf("-->");
 		else putchar('"');
@@ -112,7 +124,7 @@ void print_element(html_element_t *elem, html_tree_t *tree, bool print_family_in
 		printf("Tag: <");
 		if (elem->properties.tag == TAG_OTHER && elem->properties.element_name != NULL)
 			printf("%s", elem->properties.element_name);
-		else if (elem->properties.element_name != NULL)
+		else
 			printf("%s", tag_names[elem->properties.tag]);
 		putchar('>');
 		putchar('\n');
@@ -135,6 +147,7 @@ void print_element(html_element_t *elem, html_tree_t *tree, bool print_family_in
 				}
 			}
 			putchar('\n');
+			free(classes);
 		}
 
 		if (elem->properties.other_attributes != NULL)
@@ -151,7 +164,7 @@ void print_element(html_element_t *elem, html_tree_t *tree, bool print_family_in
   print_child:
   	if (elem->first_child != NULL && print_family_info)
 	{
-		print_other_element_whereabouts(elem->first_child, "first_child:");
+		print_other_element_whereabouts(elem->first_child, "first_child");
 	}
 
 	printf("----------------\n\n");

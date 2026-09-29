@@ -64,6 +64,8 @@ const char *get_element_id(html_element_t *elem);
 //returns element class, fills number of classes into class_count
 //returns NULL if element does not have any classes, class_count = 0
 //tree is needed as a parameter since it contains the classes table
+//ALLOCATES the array and needs to be FREED
+//TODO make this without malloc
 const char **get_element_classes(html_element_t *elem, html_tree_t *tree, size_t *class_count);
 
 //returns element's other attributes (non-id, non-class attributes)

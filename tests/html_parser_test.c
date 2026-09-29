@@ -48,8 +48,13 @@ int main(int argc, char **argv)
 	if (res != 0)
 	{
 		fprintf(stderr, "html_parser_test: Parsing returned %d, which means there were issues.\n", res);
+		goto end;
 	}
 
+	//print tree
+	print_html_tree(tree);
+
+  end:
 	//free
 	html_tree_free(tree);
 

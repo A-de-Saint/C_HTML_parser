@@ -824,9 +824,16 @@ int parse_html(RAW_HTML_TYPE raw_html, html_tree_t *dst)
 						state = TEXT;
 						break;
 					}
+					//now that it is clear that the end tag is valid, reset text node
+					else
+					{
+						curr_elem = NULL;
+						curr_elem_linked = false;
+					}
 
 					html_element_t *pop_elem = NULL;
 					size_t stack_size_backup = stack.size;
+					bool notified_about_mismatch = false;
 					while ((pop_elem = element_stack_pop(&stack)) != NULL)
 					{
 						const char *pop_elem_name = pop_elem->properties.element_name;
@@ -838,10 +845,15 @@ int parse_html(RAW_HTML_TYPE raw_html, html_tree_t *dst)
 
 						if (string_chararr_strcmp(&elem_name, pop_elem_name) != 0)
 						{
-							fprintf(stderr, "html_parser: warning: expected end tag for element: %s, but instead got '</", pop_elem_name);
-							for (size_t i = 0; i < elem_name.length; i++)
-								fputc(elem_name.data[i], stderr);
-							fprintf(stderr, ">'. Line: %zu Col: %zu\n", line_count, col_count);
+							//only notify once
+							if (!notified_about_mismatch)
+							{
+								fprintf(stderr, "html_parser: warning: expected end tag for element: %s, but instead got '</", pop_elem_name);
+								for (size_t i = 0; i < elem_name.length; i++)
+									fputc(elem_name.data[i], stderr);
+								fprintf(stderr, ">'. Line: %zu Col: %zu\n", line_count, col_count);
+								notified_about_mismatch = true;
+							}
 							continue;
 						}
 						else goto elem_end_end_end;
@@ -1216,8 +1228,6 @@ int parse_html(RAW_HTML_TYPE raw_html, html_tree_t *dst)
 
 						//label for finalizing a single attribute
 					  finalize_attr:
-					  	if (attr_val.length == 0)
-							goto after_switch;
 					  	if (spec_case == ID)
 						{
 							if (!write_id_to_element(curr_elem, &attr_val))
@@ -1239,7 +1249,8 @@ int parse_html(RAW_HTML_TYPE raw_html, html_tree_t *dst)
 								goto alloc_err;
 							}
 						}
-						  	
+						attr_name.length = 0;
+						attr_val.length = 0;
 
 						
 					}
