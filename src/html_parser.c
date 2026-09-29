@@ -82,19 +82,31 @@ bool write_id_to_element(html_element_t *elem, string_t *id_name)
 //adds class to classlist and writes its id to element
 bool write_class_to_element(html_element_t *elem, string_t *class_name, html_tree_t *tree)
 {
-	//find class id
 	size_t i = 0;
+
+	if (elem->properties.class_ids == NULL)
+	{
+		if (!element_create_classlist(elem, ELEMENT_INITIAL_CLASS_IDS_CAPACITY))
+			return false;
+		//going to not_found with i = 0; that's the index where the class will get added
+		goto not_found;
+	}
+
+	//find class id
 	for ( ; i < tree->classes.size; i++)
 	{
 		if (string_chararr_strcmp(class_name, tree->classes.data[i]) == 0)
 			goto found;
 	}
 
+  not_found:
 	//if here, class not found
 	//copy classname and add to classlist
 	char *classlist_entry = malloc((class_name->length + 1) * sizeof(char));
 	if (!classlist_entry)
 		return false;
+	strncpy(classlist_entry, class_name->data, class_name->length);
+	classlist_entry[class_name->length] = '\0';
 	if (!class_list_add(&tree->classes, classlist_entry))
 	{
 		free(classlist_entry);
@@ -273,7 +285,8 @@ void link_element(html_element_t *elem, html_element_t *parent)
 	
 	//go through the linked list
 	html_element_t *curr_child = parent->first_child;
-	while (curr_child->next_sibling != NULL);
+	while (curr_child->next_sibling != NULL)
+		curr_child = curr_child->next_sibling;
 	curr_child->next_sibling = elem;
 }
 
@@ -398,6 +411,9 @@ int parse_html(RAW_HTML_TYPE raw_html, html_tree_t *dst)
 		else
 			col_count++;
 
+		/* DEBUG REPORT 
+		printf("Char: %c\tState: %d\n", currchar, (int)state); */
+
 		switch (state)
 		{
 			/* TEXT */
@@ -431,6 +447,10 @@ int parse_html(RAW_HTML_TYPE raw_html, html_tree_t *dst)
 
 			/* '<' READ */
 			case LT_READ:
+
+				/* DEBUG 
+					printf("got heree\n"); */
+				
 				/* CASE "<!" */
 				if (currchar == '!')
 				{
@@ -494,7 +514,7 @@ int parse_html(RAW_HTML_TYPE raw_html, html_tree_t *dst)
 					}
 
 					//an element name must start with an ASCII letter - if not, error and ignore whole token
-					if (!(currchar  >= 'a' && currchar <= 'z') || !(currchar <= 'A' && currchar >= 'Z'))
+					if (!(currchar  >= 'a' && currchar <= 'z') && !(currchar <= 'A' && currchar >= 'Z'))
 					{
 						fprintf(stderr, "html_parser: Element token not starting with an ascii letter will be ignored (treated as a bogus comment). Line: %zu Col: %zu\n", line_count, col_count);
 						curr_elem = NULL;
@@ -517,6 +537,9 @@ int parse_html(RAW_HTML_TYPE raw_html, html_tree_t *dst)
 
 					//no need to check for return value, since if alloc was good, size cannot be greater than capacity
 					string_putchar(&elem_name, currchar);
+
+					/* DEBUG 
+					printf("got here\n"); */
 				}
 
 				break;
@@ -792,6 +815,7 @@ int parse_html(RAW_HTML_TYPE raw_html, html_tree_t *dst)
 					//error recovery for "</>"
 					if (elem_name.length == 0)
 					{
+						//TODO check - element_putchar might not go to a TEXT element
 						fprintf(stderr, "html_parser: warn: invalid end tag, will be treated as text. Line: %zu Col: %zu\n", line_count, col_count);
 						if (!element_putchar(curr_elem, '<') ||
 							!element_putchar(curr_elem, '/') ||
@@ -820,6 +844,7 @@ int parse_html(RAW_HTML_TYPE raw_html, html_tree_t *dst)
 							fprintf(stderr, ">'. Line: %zu Col: %zu\n", line_count, col_count);
 							continue;
 						}
+						else goto elem_end_end_end;
 					}
 
 					//if pop_elem was not found, invalid element end
@@ -834,6 +859,7 @@ int parse_html(RAW_HTML_TYPE raw_html, html_tree_t *dst)
 						//bring the stack back (invalid element case)
 						stack.size = stack_size_backup;
 					}
+				  elem_end_end_end:
 
 					//reset elem_name buffer and go to TEXT
 					elem_name.length = 0;
@@ -885,7 +911,10 @@ int parse_html(RAW_HTML_TYPE raw_html, html_tree_t *dst)
 
 				//inner loop
 				while ((currchar = RAW_HTML_GETCHAR(raw_html)) != RAW_HTML_EOF)
-				{	
+				{
+					/* DEBUG INFO 
+					printf("Char: %c\tInner state: %d\n", currchar, (int)attr_state); */
+
 					//keep track of which line and column it is
 					//need to do this again inside inner loop
 					if (currchar == '\n')
@@ -954,6 +983,10 @@ int parse_html(RAW_HTML_TYPE raw_html, html_tree_t *dst)
 						//reset attr_state
 						attr_state = DEFAULT;
 
+						//reset curr_elem
+						curr_elem = NULL;
+						curr_elem_linked = false;
+
 						//return to TEXT
 						state = TEXT;
 
@@ -1004,7 +1037,7 @@ int parse_html(RAW_HTML_TYPE raw_html, html_tree_t *dst)
 						goto after_switch;		//don't continue into the inner FSM, report (and add '/' afterward)
 					}
 					/* CASE other invalid characters */
-					else if (currchar == '=' && attr_state != READING_ATTR_Q && attr_state != EXP_EQ)
+					else if (currchar == '=' && attr_state != READING_ATTR_Q && attr_state != EXP_EQ && attr_state != READING_NAME)	//if reading name, '=' is a valid transition into reading attrs
 						fprintf(stderr, "html_parser: parse error: invalid character '='. Will still get parsed. Line: %zu Col: %zu\n", line_count, col_count);
 					else if ((currchar == '\'' || currchar == '"') && attr_state != READING_ATTR_Q && attr_state != QUOTES_OR_NOT)
 						fprintf(stderr, "html_parser: parse error: invalid character '%c'. Will still get parsed. Line: %zu Col: %zu\n", currchar,line_count, col_count);

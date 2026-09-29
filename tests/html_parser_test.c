@@ -53,6 +53,8 @@ int main(int argc, char **argv)
 	//free
 	html_tree_free(tree);
 
+	fclose(html_file);
+
 	return 0;
 }
 

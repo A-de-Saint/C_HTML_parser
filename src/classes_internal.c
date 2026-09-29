@@ -30,3 +30,20 @@ int find_class_num(class_list_t *list, const char *name)
 	}
 	return -1;
 }
+
+//frees class list and nullifies it
+void class_list_free(class_list_t *list)
+{
+	if (list->data)
+	{
+		for (unsigned i = 0; i < list->size; i++)
+		{
+			if (list->data[i])
+				free(list->data[i]);
+		}
+		free(list->data);	//SUS
+	}
+	list->data = NULL;
+	list->capacity = 0;
+	list->size = 0;
+}

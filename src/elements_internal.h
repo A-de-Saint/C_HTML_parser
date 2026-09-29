@@ -3,6 +3,7 @@
 
 #define TEXT_NODE_INIT_CAPACITY 128
 #define COMMENT_NODE_INIT_CAPACITY 128
+#define ELEMENT_INITIAL_CLASS_IDS_CAPACITY 4
 
 #include <stdlib.h>
 #include <stdbool.h>
@@ -12,6 +13,8 @@
 //if type == NODE_COMMENT or NODE_TEXT, allocs the text string
 //does NOT allocate everything - to potentially save performance
 html_element_t *element_init(node_type_t type, html_element_t *parent);
+
+bool element_create_classlist(html_element_t *elem, size_t initial_capacity);
 
 //frees element's data (properties or text)
 //pointers to parent, sibling and child are valid after this operation
@@ -28,9 +31,13 @@ static inline void element_assign_sibling(html_element_t *elem, html_element_t *
 }
 
 //puts a single character into the element's text
-//does NOT check if an element is comment or text
+//does NOT check if an element is comment or text //TODO resolve
 static inline bool element_putchar(html_element_t *elem, char ch)
 {
+	//doesn't work for ELEMENT node
+	if (elem->type == NODE_ELEMENT)
+		return false;
+
 	if (elem->text.length >= elem->text.capacity)
 	{
 		if (!string_resize(&elem->text))

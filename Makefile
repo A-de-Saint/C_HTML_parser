@@ -19,6 +19,7 @@ all: $(STATIC_TARGET) $(DYNAMIC_TARGET)
 #TODO
 test: all
 	$(CC) $(CFLAGS) tests/html_parser_test.c -L$(STATIC) -lhtmlparser -o html_parser_test
+	valgrind --leak-check=full ./html_parser_test test_samples/normal.html
 
 $(STATIC_TARGET): $(OBJS) | $(STATIC)
 	ar rcs $@ $^

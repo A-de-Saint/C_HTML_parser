@@ -1,6 +1,7 @@
 #include <stdlib.h>
 #include "html_parser_internal.h"
 #include "elements_internal.h"
+#include "classes_internal.h"
 
 //initial size of class list array
 #define CLASS_LIST_INIT_SIZE 128
@@ -16,6 +17,8 @@ bool class_list_init(class_list_t *dst)
 	return true;
 }
 
+//TODO resolve (duplicate in classes_internal)
+#ifdef oeqfbeibfqfenfoq
 //resizes class list to double its previous capacity
 bool class_list_resize(class_list_t *list)
 {
@@ -26,23 +29,7 @@ bool class_list_resize(class_list_t *list)
 	list->capacity *= 2;
 	return true;
 }
-
-//frees class list and nullifies it
-void class_list_free(class_list_t *list)
-{
-	if (list->data)
-	{
-		for (unsigned i = 0; i < list->size; i++)
-		{
-			if (list->data[i])
-				free(list->data[i]);
-		}
-		free(list->data);	//SUS
-	}
-	list->data = NULL;
-	list->capacity = 0;
-	list->size = 0;
-}
+#endif
 
 //html tree initialization
 //allocs class list and creates a document element (fist element, parent to all)

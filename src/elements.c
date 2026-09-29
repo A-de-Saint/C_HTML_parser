@@ -10,6 +10,10 @@ html_element_t *element_init(node_type_t type, html_element_t *parent)
 	//assign known values
 	elem->type = type;
 	elem->parent = parent;
+
+	//initialize child and sibling to NULL
+	elem->first_child = NULL;
+	elem->next_sibling = NULL;
 	
 	//if TEXT, alloc string
 	if (type == NODE_TEXT)
@@ -28,6 +32,17 @@ html_element_t *element_init(node_type_t type, html_element_t *parent)
 			return NULL;
 		}
 	}
+	else //dealing with NODE_ELEMENT
+	{
+		//init values
+		elem->properties.tag = TAG_OTHER;
+		elem->properties.class_ids = NULL;
+		elem->properties.class_count = 0;
+		elem->properties.class_capacity = 0;
+		elem->properties.id = NULL;
+		elem->properties.element_name = NULL;
+		elem->properties.other_attributes = NULL;
+	}
 
 	return elem;
 }
@@ -45,7 +60,15 @@ void element_free_data(html_element_t *elem)
 	check_and_free(elem->properties.other_attributes);
 }
 
-
+bool element_create_classlist(html_element_t *elem, size_t initial_capacity)
+{
+	elem->properties.class_ids = malloc(initial_capacity * sizeof(size_t));
+	if (elem->properties.class_ids == NULL)
+		return false;
+	elem->properties.class_capacity = initial_capacity;
+	elem->properties.class_count = 0;
+	return true;
+}
 
 
 
