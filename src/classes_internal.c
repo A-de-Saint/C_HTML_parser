@@ -7,6 +7,7 @@ static inline bool class_list_resize(class_list_t *list)
 	if (!tmp)
 		return false;
 	list->data = tmp;
+	list->capacity *= 2;
 	return true;
 }
 

@@ -71,11 +71,12 @@ bool string_append_string(string_t *dst, string_t *src)
 		char *tmp = realloc(dst->data, (req_cap * 2) * sizeof(char));
 		if (!tmp)
 			return false;
+		dst->data = tmp;
 		dst->capacity = req_cap * 2;
 	}
 	for (size_t i = 0; i < src->length; i++)
 	{
-		dst->data[dst->length++] = src->data[i];
+		dst->data[(dst->length)++] = src->data[i];
 	}
 	return true;
 }

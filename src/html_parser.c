@@ -891,7 +891,7 @@ int parse_html(RAW_HTML_TYPE raw_html, html_tree_t *dst)
 							end_err_reported = true;
 						}
 					}
-					if (!string_putchar(&elem_name, currchar))
+					if (!string_putchar(&elem_name, convert_to_lowercase(currchar)))
 					{
 						goto alloc_err;
 					}
@@ -1063,7 +1063,7 @@ int parse_html(RAW_HTML_TYPE raw_html, html_tree_t *dst)
 
 							//else
 							//no need to check  return value, since the buffer is empty
-							string_putchar(&attr_name, currchar);
+							string_putchar(&attr_name, convert_to_lowercase(currchar));
 							attr_state = READING_NAME;
 							break;
 
@@ -1129,7 +1129,7 @@ int parse_html(RAW_HTML_TYPE raw_html, html_tree_t *dst)
 								attr_name.length = 0;
 
 								//no need to check return bool since there will always be at least 1 allocated char
-								string_putchar(&attr_name, currchar);
+								string_putchar(&attr_name, convert_to_lowercase(currchar));
 								attr_state = READING_NAME;
 								break;
 							}
