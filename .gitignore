@@ -1,3 +1,4 @@
 bin/
 static_lib/
 dynamic_lib/
+html_parser_test

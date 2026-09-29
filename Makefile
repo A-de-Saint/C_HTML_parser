@@ -1,5 +1,5 @@
 CC = gcc
-CFLAGS = -Wall -Wextra -Werror
+CFLAGS = -g -Wall -Wextra -Werror
 
 SRC_DIR = src
 BIN_DIR = bin
@@ -18,7 +18,7 @@ all: $(STATIC_TARGET) $(DYNAMIC_TARGET)
 
 #TODO
 test: all
-	echo "To be done later"
+	$(CC) $(CFLAGS) tests/html_parser_test.c -L$(STATIC) -lhtmlparser -o html_parser_test
 
 $(STATIC_TARGET): $(OBJS) | $(STATIC)
 	ar rcs $@ $^
